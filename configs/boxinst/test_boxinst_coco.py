@@ -81,7 +81,7 @@ model = dict(
         pos_weight=-1,
         debug=False),
     test_cfg=dict(
-        nms_pre=1000,
+        nms_pre=2000,
         min_bbox_size=0,
         score_thr=0.05,
         nms=dict(type='nms', iou_threshold=0.5),
@@ -157,3 +157,5 @@ checkpoint_config = dict(interval=1)
 work_dir = './work_dirs/boxinst_coco_1x'
 load_from = None
 resume_from = None
+
+import mmdet.ops.pairwise

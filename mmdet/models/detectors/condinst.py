@@ -65,16 +65,20 @@ class CondInst(SingleStageDetector):
 
         inputs = (cls_score, centerness, param_pred,
                   coors, level_inds, img_inds, gt_inds)
-        param_pred, coors, level_inds, img_inds, gt_inds = self.mask_head.training_sample(
-            *inputs)
-        mask_pred = self.mask_head(
-            mask_feat, param_pred, coors, level_inds, img_inds)
-        loss_mask = self.mask_head.loss(img, img_metas, mask_pred, gt_inds, gt_bboxes,
-                                        gt_masks, gt_labels)
-        losses.update(loss_mask)
+        if len(gt_inds) != 0:
+            param_pred, coors, level_inds, img_inds, gt_inds = self.mask_head.training_sample(
+                *inputs)
+            mask_pred = self.mask_head(
+                mask_feat, param_pred, coors, level_inds, img_inds)
+            loss_mask = self.mask_head.loss(img, img_metas, mask_pred, gt_inds, gt_bboxes,
+                                            gt_masks, gt_labels)
+            losses.update(loss_mask)
         return losses
 
+    @torch.no_grad()
     def simple_test(self, img, img_metas, rescale=False):
+        # import pdb;pdb.set_trace()
+        torch.cuda.empty_cache()
         feat = self.extract_feat(img)
         outputs = self.bbox_head.simple_test(
             feat, self.mask_head.param_conv, img_metas, rescale=rescale)
@@ -84,7 +88,6 @@ class CondInst(SingleStageDetector):
             bbox2result(det_bbox, det_label, self.bbox_head.num_classes)
             for det_bbox, det_label in zip(det_bboxes, det_labels)
         ]
-
         mask_feat = self.mask_branch(feat)
         mask_results = self.mask_head.simple_test(
             mask_feat,

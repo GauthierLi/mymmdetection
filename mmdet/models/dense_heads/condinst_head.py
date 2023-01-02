@@ -163,10 +163,8 @@ def aligned_bilinear(tensor, factor):
         mode='bilinear',
         align_corners=True
     )
-    tensor = F.pad(
-        tensor, pad=(factor // 2, 0, factor // 2, 0),
-        mode="replicate"
-    )
+    tensor = F.pad(tensor, 
+        pad=(factor // 2, 0, factor // 2, 0),mode="replicate")
     return tensor[:, :, :oh - 1, :ow - 1]
 
 
@@ -637,6 +635,7 @@ class CondInstBoxHead(AnchorFreeHead):
 
         return labels, bbox_targets, min_area_inds
 
+    @torch.no_grad()
     def simple_test(self, feats, top_module, img_metas, rescale=False):
         outs = self.forward(feats, top_module)
         results_list = self.get_bboxes(*outs, img_metas, rescale=rescale)
@@ -1227,7 +1226,10 @@ class CondInstMaskHead(BaseModule):
                                 centerness_).topk(inst_per_gt, dim=0)[1]
                         img_gt_inst_inds = img_gt_inst_inds[inds]
                     sampled_inds.append(img_gt_inst_inds)
-            sampled_inds = torch.cat(sampled_inds, dim=0)
+            if len(sampled_inds) != 0:
+                sampled_inds = torch.cat(sampled_inds, dim=0)
+            else:
+                import pdb;pdb.set_trace()
 
         param_preds = param_preds[sampled_inds]
         coors = coors[sampled_inds]
@@ -1236,6 +1238,7 @@ class CondInstMaskHead(BaseModule):
         gt_inds = gt_inds[sampled_inds]
         return param_preds, coors, level_inds, img_inds, gt_inds
 
+    @torch.no_grad()
     def simple_test(self,
                     mask_feat,
                     det_labels,
@@ -1260,7 +1263,6 @@ class CondInstMaskHead(BaseModule):
             segm_results = [[[] for _ in range(num_classes)]
                             for _ in range(num_imgs)]
             return segm_results
-
         mask_preds = self.forward(mask_feat, det_params, det_coors, det_level_inds,
                                   det_img_inds)
         mask_preds = mask_preds.sigmoid()
