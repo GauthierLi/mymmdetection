@@ -65,14 +65,15 @@ class CondInst(SingleStageDetector):
 
         inputs = (cls_score, centerness, param_pred,
                   coors, level_inds, img_inds, gt_inds)
-        if len(gt_inds) != 0:
-            param_pred, coors, level_inds, img_inds, gt_inds = self.mask_head.training_sample(
-                *inputs)
+        try:
+            param_pred, coors, level_inds, img_inds, gt_inds = self.mask_head.training_sample(*inputs)
             mask_pred = self.mask_head(
                 mask_feat, param_pred, coors, level_inds, img_inds)
             loss_mask = self.mask_head.loss(img, img_metas, mask_pred, gt_inds, gt_bboxes,
                                             gt_masks, gt_labels)
             losses.update(loss_mask)
+        except:
+            pass
         return losses
 
     @torch.no_grad()

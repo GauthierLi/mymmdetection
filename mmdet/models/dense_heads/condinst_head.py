@@ -1226,10 +1226,8 @@ class CondInstMaskHead(BaseModule):
                                 centerness_).topk(inst_per_gt, dim=0)[1]
                         img_gt_inst_inds = img_gt_inst_inds[inds]
                     sampled_inds.append(img_gt_inst_inds)
-            if len(sampled_inds) != 0:
-                sampled_inds = torch.cat(sampled_inds, dim=0)
-            else:
-                import pdb;pdb.set_trace()
+
+            sampled_inds = torch.cat(sampled_inds, dim=0)
 
         param_preds = param_preds[sampled_inds]
         coors = coors[sampled_inds]
@@ -1237,6 +1235,7 @@ class CondInstMaskHead(BaseModule):
         img_inds = img_inds[sampled_inds]
         gt_inds = gt_inds[sampled_inds]
         return param_preds, coors, level_inds, img_inds, gt_inds
+
 
     @torch.no_grad()
     def simple_test(self,

@@ -66,8 +66,8 @@ model = dict(
         boxinst_enabled=True,
         bottom_pixels_removed=10,
         pairwise_size=3,
-        pairwise_dilation=2,
-        pairwise_color_thresh=0.3,
+        pairwise_dilation=5, # default 2
+        pairwise_color_thresh=0.6, # default 0.3
         pairwise_warmup=10000),
     # training and testing settings
     train_cfg=dict(
@@ -147,13 +147,24 @@ evaluation = dict(metric=['bbox', 'segm'])
 
 optimizer = dict(type='SGD', lr=0.01, momentum=0.9, weight_decay=0.0001)
 optimizer_config = dict(grad_clip=None)
+# # learning policy
+# lr_config = dict(
+#     policy='step',
+#     warmup='linear',
+#     warmup_iters=500,
+#     warmup_ratio=0.001,
+#     step=[27, 33])
+
 # learning policy
 lr_config = dict(
     policy='step',
+    gamma=0.464,
+    by_epoch=False,
+    step=[327778, 327778*2, 327778*3, 355092*3],
     warmup='linear',
-    warmup_iters=500,
-    warmup_ratio=0.001,
-    step=[27, 33])
+    warmup_by_epoch=False,
+    warmup_ratio=0.001,  # no warmup 1.0
+    warmup_iters=500)
 
 log_config = dict(
     interval=50,
@@ -162,8 +173,8 @@ log_config = dict(
         dict(type='TensorboardLoggerHook', by_epoch=False)
     ])
 
-max_iters = 368750
-runner = dict(type='IterBasedRunner', max_iters=368751)
+max_iters = 368750 * 3
+runner = dict(type='IterBasedRunner', max_iters=max_iters + 1)
 
 interval = 5000
 workflow = [('train', interval)]
@@ -176,7 +187,7 @@ evaluation = dict(
     dynamic_intervals=dynamic_intervals,
     metric=['bbox', 'segm'])
 
-work_dir = './workdir/cityscapes/boxInst/res101'
+work_dir = './workdir/cityscapes/boxInst/res101_try2_with0.6colorthr'
 auto_resume = False
 load_from = None
 resume_from = None
