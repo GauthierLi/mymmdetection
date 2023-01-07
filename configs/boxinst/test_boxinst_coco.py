@@ -81,11 +81,11 @@ model = dict(
         pos_weight=-1,
         debug=False),
     test_cfg=dict(
-        nms_pre=2000,
+        nms_pre=200,
         min_bbox_size=0,
         score_thr=0.05,
         nms=dict(type='nms', iou_threshold=0.5),
-        max_per_img=2000,
+        max_per_img=100,
         output_segm=False))
 
 dataset_type = 'CocoDataset'
@@ -96,8 +96,8 @@ train_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='LoadAnnotations', with_bbox=True, with_mask=False),
     dict(type='Resize',
-         img_scale=[(1333, 800), (1333, 768), (1333, 736),
-                    (1333, 704), (1333, 672), (1333, 640)],
+         img_scale=[(133, 80), (133, 76), (133, 73),
+                    (133, 70), (133, 67), (133, 64)],
          multiscale_mode='value',
          keep_ratio=True),
     dict(type='RandomFlip', flip_ratio=0.5),
@@ -110,7 +110,7 @@ test_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(
         type='MultiScaleFlipAug',
-        img_scale=(1333, 800),
+        img_scale=(133, 80),
         flip=False,
         transforms=[
             dict(type='Resize', keep_ratio=True),
@@ -154,8 +154,6 @@ lr_config = dict(
 runner = dict(type='EpochBasedRunner', max_epochs=12)
 evaluation = dict(interval=1, metric=['bbox', 'segm'])
 checkpoint_config = dict(interval=1)
-work_dir = './work_dirs/boxinst_coco_1x'
+work_dir = './work_dirs/boxinst_coco_1x_test'
 load_from = None
 resume_from = None
-
-import mmdet.ops.pairwise

@@ -66,8 +66,8 @@ model = dict(
         boxinst_enabled=True,
         bottom_pixels_removed=10,
         pairwise_size=3,
-        pairwise_dilation=5, # default 2
-        pairwise_color_thresh=0.6, # default 0.3
+        pairwise_dilation=4, # default 2
+        pairwise_color_thresh=0.55, # default 0.3
         pairwise_warmup=10000),
     # training and testing settings
     train_cfg=dict(
@@ -143,28 +143,18 @@ data = dict(
         'annotations/instancesonly_filtered_gtFine_test.json',
         img_prefix=data_root + 'leftImg8bit/test/',
         pipeline=test_pipeline))
-evaluation = dict(metric=['bbox', 'segm'])
+evaluation = dict(metric=['bbox', 'segm'], save_best='segm_mAP')
 
-optimizer = dict(type='SGD', lr=0.01, momentum=0.9, weight_decay=0.0001)
+optimizer = dict(type='SGD', lr=0.0001, momentum=0.9, weight_decay=0.001)
 optimizer_config = dict(grad_clip=None)
-# # learning policy
-# lr_config = dict(
-#     policy='step',
-#     warmup='linear',
-#     warmup_iters=500,
-#     warmup_ratio=0.001,
-#     step=[27, 33])
-
 # learning policy
 lr_config = dict(
     policy='step',
-    gamma=0.464,
-    by_epoch=False,
-    step=[327778, 327778*2, 327778*3, 355092*3],
     warmup='linear',
-    warmup_by_epoch=False,
-    warmup_ratio=0.001,  # no warmup 1.0
-    warmup_iters=500)
+    warmup_iters=500,
+    warmup_ratio=0.001,
+    step=[18, 24])
+
 
 log_config = dict(
     interval=50,
@@ -173,21 +163,18 @@ log_config = dict(
         dict(type='TensorboardLoggerHook', by_epoch=False)
     ])
 
-max_iters = 368750 * 3
-runner = dict(type='IterBasedRunner', max_iters=max_iters + 1)
+runner = dict(type='EpochBasedRunner', max_epochs=36)
 
-interval = 5000
+interval = 1
 workflow = [('train', interval)]
 checkpoint_config = dict(
-    by_epoch=False, interval=interval, save_last=True, max_keep_ckpts=3)
+    interval=interval, save_last=True, max_keep_ckpts=3)
 
-dynamic_intervals = [(max_iters // interval * interval + 1, max_iters)]
 evaluation = dict(
     interval=interval,
-    dynamic_intervals=dynamic_intervals,
     metric=['bbox', 'segm'])
 
-work_dir = './workdir/cityscapes/boxInst/res101_try2_with0.6colorthr'
+work_dir = './workdir/cityscapes/boxInst/res101_try2_with4dilitation_colorsim0.6'
 auto_resume = False
 load_from = None
 resume_from = None
