@@ -29,7 +29,7 @@ mkl-service==2.4.0
 mmcv-full==1.7.0
 model-index==0.1.11
 networkx==2.8.8
-numpys
+numpy
 oauthlib==3.2.2
 opencv-python==4.6.0.66
 openmim==0.3.3
