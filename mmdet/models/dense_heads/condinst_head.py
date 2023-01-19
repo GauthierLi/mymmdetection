@@ -85,7 +85,6 @@ def nms_with_others(multi_bboxes,
 
     return dets, labels[keep], others
 
-
 def compute_pairwise_term(mask_logits, pairwise_size, pairwise_dilation):
     assert mask_logits.dim() == 4
 
@@ -245,7 +244,6 @@ def get_image_color_similarity(image, mask, pairwise_size, pairwise_dilation):
         mask.unsqueeze(0).unsqueeze(0),
         kernel_size=pairwise_size, dilation=pairwise_dilation
     )[:, 0, :, :, :]
-
     return similarity * unfolded_weight
 
 
@@ -1303,6 +1301,7 @@ class CondInstMaskHead(BaseModule):
         self._iter += 1
         similarities, gt_bitmasks, bitmasks_full = self.get_targets(
             gt_bboxes, gt_masks, imgs, img_metas)
+        # import pdb;pdb.set_trace()
         mask_scores = mask_logits.sigmoid()
         gt_bitmasks = torch.cat(gt_bitmasks, dim=0)
         gt_bitmasks = gt_bitmasks[gt_inds].unsqueeze(1).to(mask_scores.dtype)
@@ -1326,12 +1325,16 @@ class CondInstMaskHead(BaseModule):
 
             pairwise_losses = pairwise_nlog(
                 mask_logits, self.pairwise_size, self.pairwise_dilation)
+            
+            # import matplotlib.pyplot as plt
+            # import pdb;pdb.set_trace()
 
             weights = (img_color_similarity >=
-                       self.pairwise_color_thresh).float() * gt_bitmasks.float()
+                       self.pairwise_color_thresh).float() # * gt_bitmasks.float()
 
             loss_pairwise = (pairwise_losses * weights).sum() / \
                 weights.sum().clamp(min=1.0)
+
 
             warmup_factor = min(self._iter.item() /
                                 float(self._warmup_iters), 1.0)
@@ -1350,7 +1353,7 @@ class CondInstMaskHead(BaseModule):
 
     def get_targets(self, gt_bboxes, gt_masks, img, img_metas):
         """get targets"""
-
+        
         if self.boxinst_enabled:
 
             padded_image_masks = []
@@ -1416,8 +1419,11 @@ class CondInstMaskHead(BaseModule):
         bitmasks_full = []
 
         for i, per_img_gt_bboxes in enumerate(gt_bboxes):
-            image_lab = color.rgb2lab(
-                downsampled_images[i].byte().permute(1, 2, 0).cpu().numpy())
+            # image_lab = color.rgb2lab(
+            #     downsampled_images[i].byte().permute(1, 2, 0).cpu().numpy())
+
+            image_lab = color.rgb2hsv(downsampled_images[i].byte().permute(1, 2, 0).cpu().numpy())
+
             image_lab = torch.as_tensor(
                 image_lab, device=padded_image_masks.device, dtype=torch.float32)
             image_lab = image_lab.permute(2, 0, 1)[None]

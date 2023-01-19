@@ -89,7 +89,7 @@ model = dict(
         output_segm=False))
 
 dataset_type = 'CocoDataset'
-data_root = '/data/coco/'
+data_root = '/home/gauthierli/data/coco2017/'
 img_norm_cfg = dict(
     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
 train_pipeline = [
@@ -152,7 +152,7 @@ lr_config = dict(
     step=[27, 33])
 
 runner = dict(type='EpochBasedRunner', max_epochs=36)
-evaluation = dict(interval=1, metric=['bbox', 'segm'])
+evaluation = dict(interval=1, metric=['bbox', 'segm'], save_best="segm_mAP")
 checkpoint_config = dict(interval=1)
 work_dir = './work_dirs/boxinst_coco_r101_3x'
 load_from = None

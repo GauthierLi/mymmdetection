@@ -56,7 +56,7 @@ test_pipeline = [
         ])
 ]
 dataset_type = 'CocoDataset'
-data_root = 'data/coco/'
+data_root = '/home/gauthierli/data/coco2017/'
 data = dict(
     _delete_=True,
     samples_per_gpu=2,

@@ -1,0 +1,26 @@
+/home/gauthierli/.conda/envs/mmlab/lib/python3.8/site-packages/mmcv/__init__.py:20: UserWarning: On January 1, 2023, MMCV will release v2.0.0, in which it will remove components related to the training process and add a data transformation module. In addition, it will rename the package names mmcv to mmcv-lite and mmcv-full to mmcv. See https://github.com/open-mmlab/mmcv/blob/master/docs/en/compatibility.md for more details.
+  warnings.warn(
+Traceback (most recent call last):
+  File "tools/train.py", line 17, in <module>
+    from mmdet.apis import init_random_seed, set_random_seed, train_detector
+  File "/home/gauthierli/code/mmdetection/mmdet/apis/__init__.py", line 2, in <module>
+    from .inference import (async_inference_detector, inference_detector,
+  File "/home/gauthierli/code/mmdetection/mmdet/apis/inference.py", line 13, in <module>
+    from mmdet.datasets import replace_ImageToTensor
+  File "/home/gauthierli/code/mmdetection/mmdet/datasets/__init__.py", line 13, in <module>
+    from .utils import (NumClassCheckHook, get_loading_pipeline,
+  File "/home/gauthierli/code/mmdetection/mmdet/datasets/utils.py", line 11, in <module>
+    from mmdet.models.dense_heads import GARPNHead, RPNHead
+  File "/home/gauthierli/code/mmdetection/mmdet/models/__init__.py", line 7, in <module>
+    from .dense_heads import *  # noqa: F401,F403
+  File "/home/gauthierli/code/mmdetection/mmdet/models/dense_heads/__init__.py", line 17, in <module>
+    from .fsaf_head import FSAFHead
+  File "/home/gauthierli/code/mmdetection/mmdet/models/dense_heads/fsaf_head.py", line 9, in <module>
+    from ..losses.accuracy import accuracy
+  File "<frozen importlib._bootstrap>", line 991, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 975, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 671, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 839, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 934, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1032, in get_data
+KeyboardInterrupt

@@ -16,34 +16,6 @@ from ..builder import HEADS, build_loss
 from .anchor_free_head import AnchorFreeHead
 from .maskformer_head import MaskFormerHead
 
-def dice_coefficient(x, target):
-    """
-    Dice Loss: 1 - 2 * (intersection(A, B) / (A^2 + B^2))
-    :param x:
-    :param target:
-    :return:
-    """
-    eps = 1e-5
-    n_inst = x.size(0)
-    x = x.reshape(n_inst, -1)
-    target = target.reshape(n_inst, -1)
-    intersection = (x * target).sum(dim=1)
-    union = (x ** 2.0).sum(dim=1) + (target ** 2.0).sum(dim=1) + eps
-    loss = 1. - (2 * intersection / union)
-    return loss
-
-
-def compute_project_term(mask_scores, gt_bitmasks):
-    mask_losses_y = dice_coefficient(
-        mask_scores.max(dim=1, keepdim=True)[0],
-        gt_bitmasks.max(dim=1, keepdim=True)[0]
-    )
-    mask_losses_x = dice_coefficient(
-        mask_scores.max(dim=2, keepdim=True)[0],
-        gt_bitmasks.max(dim=2, keepdim=True)[0]
-    )
-    return (mask_losses_x + mask_losses_y).mean()
-
 
 @HEADS.register_module()
 class Mask2FormerHead(MaskFormerHead):
@@ -101,10 +73,8 @@ class Mask2FormerHead(MaskFormerHead):
                  train_cfg=None,
                  test_cfg=None,
                  init_cfg=None,
-                 proj_loss_enabled=False,
                  **kwargs):
         super(AnchorFreeHead, self).__init__(init_cfg)
-        self.proj_loss_enabled = proj_loss_enabled
         self.num_things_classes = num_things_classes
         self.num_stuff_classes = num_stuff_classes
         self.num_classes = self.num_things_classes + self.num_stuff_classes
@@ -307,11 +277,7 @@ class Mask2FormerHead(MaskFormerHead):
             # zero match
             loss_dice = mask_preds.sum()
             loss_mask = mask_preds.sum()
-            if self.proj_loss_enabled:
-                loss_proj = mask_preds.sum()
-            else:
-                loss_proj = None
-            return loss_cls, loss_mask, loss_dice, loss_proj
+            return loss_cls, loss_mask, loss_dice
 
         with torch.no_grad():
             points_coords = get_uncertain_point_coords_with_randomness(
@@ -324,15 +290,10 @@ class Mask2FormerHead(MaskFormerHead):
         mask_point_preds = point_sample(
             mask_preds.unsqueeze(1), points_coords).squeeze(1)
 
-        # projrction
-        if self.proj_loss_enabled:
-            loss_proj = compute_project_term(mask_preds, mask_targets[:,::4,::4])
-        else:
-            loss_proj = None
-
         # dice loss
         loss_dice = self.loss_dice(
             mask_point_preds, mask_point_targets, avg_factor=num_total_masks)
+
         # mask loss
         # shape (num_queries, num_points) -> (num_queries * num_points, )
         mask_point_preds = mask_point_preds.reshape(-1)
@@ -342,8 +303,8 @@ class Mask2FormerHead(MaskFormerHead):
             mask_point_preds,
             mask_point_targets,
             avg_factor=num_total_masks * self.num_points)
-        return loss_cls, loss_mask, loss_dice, loss_proj
 
+        return loss_cls, loss_mask, loss_dice
 
     def forward_head(self, decoder_out, mask_feature, attn_mask_target_size):
         """Forward for head part which is called after every decoder layer.
@@ -465,4 +426,5 @@ class Mask2FormerHead(MaskFormerHead):
 
             cls_pred_list.append(cls_pred)
             mask_pred_list.append(mask_pred)
+
         return cls_pred_list, mask_pred_list
