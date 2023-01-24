@@ -16,10 +16,12 @@ class MaskFormerFusionHead(BasePanopticFusionHead):
                  num_stuff_classes=53,
                  test_cfg=None,
                  loss_panoptic=None,
+                 score_thr=0.8,
                  init_cfg=None,
                  **kwargs):
         super().__init__(num_things_classes, num_stuff_classes, test_cfg,
                          loss_panoptic, init_cfg, **kwargs)
+        self.score_thr = score_thr
 
     def forward_train(self, **kwargs):
         """MaskFormerFusionHead has no training loss."""
@@ -150,12 +152,13 @@ class MaskFormerFusionHead(BasePanopticFusionHead):
         labels_per_image = labels_per_image[is_thing]
         mask_pred = mask_pred[is_thing]
 
-        mask_pred_binary = (mask_pred > 0).float()
+        mask_pred_binary = (mask_pred > self.score_thr).float()
         mask_scores_per_image = (mask_pred.sigmoid() *
                                  mask_pred_binary).flatten(1).sum(1) / (
                                      mask_pred_binary.flatten(1).sum(1) + 1e-6)
         det_scores = scores_per_image * mask_scores_per_image
         mask_pred_binary = mask_pred_binary.bool()
+        # import pdb;pdb.set_trace()
         bboxes = mask2bbox(mask_pred_binary)
         bboxes = torch.cat([bboxes, det_scores[:, None]], dim=-1)
 

@@ -397,7 +397,7 @@ class MaskFormerHead(AnchorFreeHead):
             # zero match
             loss_dice = mask_preds.sum()
             loss_mask = mask_preds.sum()
-            return loss_cls, loss_mask, loss_dice
+            return loss_cls, loss_mask, loss_dice, None
 
         # upsample to shape of target
         # shape (num_total_gts, h, w)
@@ -422,7 +422,7 @@ class MaskFormerHead(AnchorFreeHead):
         loss_mask = self.loss_mask(
             mask_preds, 1 - mask_targets, avg_factor=num_total_masks * h * w)
 
-        return loss_cls, loss_mask, loss_dice
+        return loss_cls, loss_mask, loss_dice, None
 
     def forward(self, feats, img_metas):
         """Forward function.

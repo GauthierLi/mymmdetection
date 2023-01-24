@@ -1,20 +1,24 @@
 # Copyright (c) OpenMMLab. All rights reserved.
+import pdb
 import copy
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
 from mmcv.cnn import Conv2d, build_plugin_layer, caffe2_xavier_init
 from mmcv.cnn.bricks.transformer import (build_positional_encoding,
                                          build_transformer_layer_sequence)
 from mmcv.ops import point_sample
 from mmcv.runner import ModuleList
 
+from mmdet.core.mask.utils import mask2bbox
 from mmdet.core import build_assigner, build_sampler, reduce_mean
 from mmdet.models.utils import get_uncertain_point_coords_with_randomness
 from ..builder import HEADS, build_loss
 from .anchor_free_head import AnchorFreeHead
 from .maskformer_head import MaskFormerHead
+
 
 def dice_coefficient(x, target):
     """
@@ -245,6 +249,29 @@ class Mask2FormerHead(MaskFormerHead):
         return (labels, label_weights, mask_targets, mask_weights, pos_inds,
                 neg_inds)
 
+    def masks2bboxes(self,mask_preds, img_metas, mask_weight=None):
+        bs = len(mask_preds)
+        ori_shapes = [meta['ori_shape'][:2] for meta in img_metas]
+        ori_bbox_list = []
+        # if isinstance(mask_preds, list):
+        #     mask_preds = [m.type(torch.float32) for m in mask_preds]
+        #     mask_preds_list = mask_preds
+        # else:
+        if mask_weight is not None:
+            mask_preds_list = [mask_preds[i][mask_weight[i]>0] for i in range(bs)]
+        else:
+            mask_preds_list = [mask_preds[i] for i in range(bs)]
+        for ori_shape, mask_pred in zip(ori_shapes, mask_preds_list):
+            ori_shape_mask = F.interpolate(
+                    mask_pred[:, None],
+                    size=ori_shape,
+                    mode='bilinear',
+                    align_corners=False)[:, 0]
+            bboxes = mask2bbox(ori_shape_mask)
+            ori_bbox_list.append(bboxes)
+        return ori_bbox_list
+
+
     def loss_single(self, cls_scores, mask_preds, gt_labels_list,
                     gt_masks_list, img_metas):
         """Loss function for outputs from a single decoder layer.
@@ -302,6 +329,8 @@ class Mask2FormerHead(MaskFormerHead):
         # extract positive ones
         # shape (batch_size, num_queries, h, w) -> (num_total_gts, h, w)
         mask_preds = mask_preds[mask_weights > 0]
+        # bboxes_preds = self.masks2bboxes(mask_preds_list, img_metas, mask_weights)
+        # bboxes_gts = self.masks2bboxes(mask_targets_list, img_metas)
 
         if mask_targets.shape[0] == 0:
             # zero match
@@ -331,6 +360,7 @@ class Mask2FormerHead(MaskFormerHead):
             loss_proj = None
 
         # dice loss
+        # import pdb; pdb.set_trace()
         loss_dice = self.loss_dice(
             mask_point_preds, mask_point_targets, avg_factor=num_total_masks)
         # mask loss
