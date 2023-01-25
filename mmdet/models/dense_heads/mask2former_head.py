@@ -102,6 +102,15 @@ class Mask2FormerHead(MaskFormerHead):
                  loss_cls=None,
                  loss_mask=None,
                  loss_dice=None,
+                 loss_gau_dice=dict(type='GauDiceLoss',
+                                    use_sigmoid=True,
+                                    activate=True,
+                                    reduction='mean',
+                                    naive_dice=False,
+                                    loss_weight=1.0,
+                                    eps=1e-4,
+                                    mask2former_enabled=True),
+                 gau_dice_enabled=False,
                  train_cfg=None,
                  test_cfg=None,
                  init_cfg=None,
@@ -167,6 +176,8 @@ class Mask2FormerHead(MaskFormerHead):
         self.loss_cls = build_loss(loss_cls)
         self.loss_mask = build_loss(loss_mask)
         self.loss_dice = build_loss(loss_dice)
+        self.loss_gau_dice = build_loss(loss_gau_dice)
+        self.gau_dice_enabled = gau_dice_enabled
 
     def init_weights(self):
         for m in self.decoder_input_projs:
@@ -329,6 +340,8 @@ class Mask2FormerHead(MaskFormerHead):
         # extract positive ones
         # shape (batch_size, num_queries, h, w) -> (num_total_gts, h, w)
         mask_preds = mask_preds[mask_weights > 0]
+
+        # ?need?
         # bboxes_preds = self.masks2bboxes(mask_preds_list, img_metas, mask_weights)
         # bboxes_gts = self.masks2bboxes(mask_targets_list, img_metas)
 
@@ -363,6 +376,15 @@ class Mask2FormerHead(MaskFormerHead):
         # import pdb; pdb.set_trace()
         loss_dice = self.loss_dice(
             mask_point_preds, mask_point_targets, avg_factor=num_total_masks)
+        if self.gau_dice_enabled:
+            target_shape = mask_targets.shape[-2:]
+            mask_pred_rescale = F.interpolate(
+                mask_preds.unsqueeze(1),
+                target_shape,
+                mode='bilinear',
+                align_corners=False).squeeze(1)
+            additional_gau_dice = self.loss_gau_dice(mask_pred_rescale, mask_targets)
+            loss_dice += additional_gau_dice
         # mask loss
         # shape (num_queries, num_points) -> (num_queries * num_points, )
         mask_point_preds = mask_point_preds.reshape(-1)

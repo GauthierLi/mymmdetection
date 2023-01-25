@@ -12,7 +12,8 @@ def gau_dice_loss(pred,
               eps=1e-4,
               reduction='mean',
               naive_dice=False,
-              avg_factor=None):
+              avg_factor=None,
+              mask2former_enabled=False):
     """Calculate dice loss, there are two forms of dice loss is supported:
 
         - the one proposed in `V-Net: Fully Convolutional Neural
@@ -40,41 +41,31 @@ def gau_dice_loss(pred,
         avg_factor (int, optional): Average factor that is used to average
             the loss. Defaults to None.
     """
-    flag = False
-    if pred.ndim == 2:
-        bs, l = pred.shape
-        flag = True
-        l = np.sqrt(l).astype(int)
-        pred = pred.view(bs, l, l)
-        target = target.view(bs, l, l)
-
-    input = pred.flatten(1)
-    gt = target.flatten(1).float()
-
-    a = torch.sum(input * gt, 1)
-    if naive_dice:
-        b = torch.sum(input, 1)
-        c = torch.sum(gt, 1)
-        d = (2 * a + eps) / (b + c + eps)
-    else:
-        b = torch.sum(input * input, 1) + eps
-        c = torch.sum(gt * gt, 1) + eps
-        d = (2 * a) / (b + c)
-
-    dice_loss = 1 - d
-
     kld_loss = KLD(pred, target, eps)
     loca_loss = location_loss(pred, target)
+    if not mask2former_enabled:
+        input = pred.flatten(1)
+        gt = target.flatten(1).float()
 
-    loss = dice_loss + kld_loss + loca_loss
+        a = torch.sum(input * gt, 1)
+        if naive_dice:
+            b = torch.sum(input, 1)
+            c = torch.sum(gt, 1)
+            d = (2 * a + eps) / (b + c + eps)
+        else:
+            b = torch.sum(input * input, 1) + eps
+            c = torch.sum(gt * gt, 1) + eps
+            d = (2 * a) / (b + c)
+        dice_loss = 1 - d
+
+        loss = dice_loss + kld_loss + loca_loss
+    else:
+        loss = kld_loss + loca_loss
     if weight is not None:
         assert weight.ndim == dice_loss.ndim
         assert len(weight) == len(pred)
     loss = weight_reduce_loss(loss, weight, reduction, avg_factor)
 
-    if flag:
-        pred = pred.view(bs, -1)
-        target = target.view(bs, -1)
     return loss
 
 def edge_distribution(mask):
@@ -142,7 +133,8 @@ class GauDiceLoss(nn.Module):
                  reduction='mean',
                  naive_dice=False,
                  loss_weight=1.0,
-                 eps=1e-4):
+                 eps=1e-4,
+                 mask2former_enabled=False):
         super(GauDiceLoss, self).__init__()
         self.use_sigmoid = use_sigmoid
         self.reduction = reduction
@@ -150,6 +142,7 @@ class GauDiceLoss(nn.Module):
         self.loss_weight = loss_weight
         self.eps = eps
         self.activate = activate
+        self.mask2former_enabled = mask2former_enabled
     
     def forward(self,
                 pred,
@@ -185,14 +178,14 @@ class GauDiceLoss(nn.Module):
             else:
                 raise NotImplementedError
 
-        loss = self.loss_weight * gau_dice_loss(
-            pred,
-            target,
-            weight,
-            eps=self.eps,
-            reduction=reduction,
-            naive_dice=self.naive_dice,
-            avg_factor=avg_factor)
+        loss = self.loss_weight * gau_dice_loss(pred,
+                                                target,
+                                                weight,
+                                                eps=self.eps,
+                                                reduction=reduction,
+                                                naive_dice=self.naive_dice,
+                                                avg_factor=avg_factor,
+                                                mask2former_enabled=self.mask2former_enabled)
         return loss
 
 if __name__ == '__main__':
