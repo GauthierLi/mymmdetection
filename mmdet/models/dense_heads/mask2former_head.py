@@ -1,52 +1,20 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-import pdb
 import copy
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import matplotlib.pyplot as plt
 from mmcv.cnn import Conv2d, build_plugin_layer, caffe2_xavier_init
 from mmcv.cnn.bricks.transformer import (build_positional_encoding,
                                          build_transformer_layer_sequence)
 from mmcv.ops import point_sample
 from mmcv.runner import ModuleList
 
-from mmdet.core.mask.utils import mask2bbox
 from mmdet.core import build_assigner, build_sampler, reduce_mean
 from mmdet.models.utils import get_uncertain_point_coords_with_randomness
 from ..builder import HEADS, build_loss
 from .anchor_free_head import AnchorFreeHead
 from .maskformer_head import MaskFormerHead
-
-
-def dice_coefficient(x, target):
-    """
-    Dice Loss: 1 - 2 * (intersection(A, B) / (A^2 + B^2))
-    :param x:
-    :param target:
-    :return:
-    """
-    eps = 1e-5
-    n_inst = x.size(0)
-    x = x.reshape(n_inst, -1)
-    target = target.reshape(n_inst, -1)
-    intersection = (x * target).sum(dim=1)
-    union = (x ** 2.0).sum(dim=1) + (target ** 2.0).sum(dim=1) + eps
-    loss = 1. - (2 * intersection / union)
-    return loss
-
-
-def compute_project_term(mask_scores, gt_bitmasks):
-    mask_losses_y = dice_coefficient(
-        mask_scores.max(dim=1, keepdim=True)[0],
-        gt_bitmasks.max(dim=1, keepdim=True)[0]
-    )
-    mask_losses_x = dice_coefficient(
-        mask_scores.max(dim=2, keepdim=True)[0],
-        gt_bitmasks.max(dim=2, keepdim=True)[0]
-    )
-    return (mask_losses_x + mask_losses_y).mean()
 
 
 @HEADS.register_module()
@@ -102,22 +70,11 @@ class Mask2FormerHead(MaskFormerHead):
                  loss_cls=None,
                  loss_mask=None,
                  loss_dice=None,
-                 loss_gau_dice=dict(type='GauDiceLoss',
-                                    use_sigmoid=True,
-                                    activate=True,
-                                    reduction='mean',
-                                    naive_dice=False,
-                                    loss_weight=1.0,
-                                    eps=1e-4,
-                                    mask2former_enabled=True),
-                 gau_dice_enabled=False,
                  train_cfg=None,
                  test_cfg=None,
                  init_cfg=None,
-                 proj_loss_enabled=False,
                  **kwargs):
         super(AnchorFreeHead, self).__init__(init_cfg)
-        self.proj_loss_enabled = proj_loss_enabled
         self.num_things_classes = num_things_classes
         self.num_stuff_classes = num_stuff_classes
         self.num_classes = self.num_things_classes + self.num_stuff_classes
@@ -176,8 +133,6 @@ class Mask2FormerHead(MaskFormerHead):
         self.loss_cls = build_loss(loss_cls)
         self.loss_mask = build_loss(loss_mask)
         self.loss_dice = build_loss(loss_dice)
-        self.loss_gau_dice = build_loss(loss_gau_dice)
-        self.gau_dice_enabled = gau_dice_enabled
 
     def init_weights(self):
         for m in self.decoder_input_projs:
@@ -260,29 +215,6 @@ class Mask2FormerHead(MaskFormerHead):
         return (labels, label_weights, mask_targets, mask_weights, pos_inds,
                 neg_inds)
 
-    def masks2bboxes(self,mask_preds, img_metas, mask_weight=None):
-        bs = len(mask_preds)
-        ori_shapes = [meta['ori_shape'][:2] for meta in img_metas]
-        ori_bbox_list = []
-        # if isinstance(mask_preds, list):
-        #     mask_preds = [m.type(torch.float32) for m in mask_preds]
-        #     mask_preds_list = mask_preds
-        # else:
-        if mask_weight is not None:
-            mask_preds_list = [mask_preds[i][mask_weight[i]>0] for i in range(bs)]
-        else:
-            mask_preds_list = [mask_preds[i] for i in range(bs)]
-        for ori_shape, mask_pred in zip(ori_shapes, mask_preds_list):
-            ori_shape_mask = F.interpolate(
-                    mask_pred[:, None],
-                    size=ori_shape,
-                    mode='bilinear',
-                    align_corners=False)[:, 0]
-            bboxes = mask2bbox(ori_shape_mask)
-            ori_bbox_list.append(bboxes)
-        return ori_bbox_list
-
-
     def loss_single(self, cls_scores, mask_preds, gt_labels_list,
                     gt_masks_list, img_metas):
         """Loss function for outputs from a single decoder layer.
@@ -341,19 +273,11 @@ class Mask2FormerHead(MaskFormerHead):
         # shape (batch_size, num_queries, h, w) -> (num_total_gts, h, w)
         mask_preds = mask_preds[mask_weights > 0]
 
-        # ?need?
-        # bboxes_preds = self.masks2bboxes(mask_preds_list, img_metas, mask_weights)
-        # bboxes_gts = self.masks2bboxes(mask_targets_list, img_metas)
-
         if mask_targets.shape[0] == 0:
             # zero match
             loss_dice = mask_preds.sum()
             loss_mask = mask_preds.sum()
-            if self.proj_loss_enabled:
-                loss_proj = mask_preds.sum()
-            else:
-                loss_proj = None
-            return loss_cls, loss_mask, loss_dice, loss_proj
+            return loss_cls, loss_mask, loss_dice
 
         with torch.no_grad():
             points_coords = get_uncertain_point_coords_with_randomness(
@@ -366,25 +290,10 @@ class Mask2FormerHead(MaskFormerHead):
         mask_point_preds = point_sample(
             mask_preds.unsqueeze(1), points_coords).squeeze(1)
 
-        # projrction
-        if self.proj_loss_enabled:
-            loss_proj = compute_project_term(mask_preds, mask_targets[:,::4,::4])
-        else:
-            loss_proj = None
-
         # dice loss
-        # import pdb; pdb.set_trace()
         loss_dice = self.loss_dice(
             mask_point_preds, mask_point_targets, avg_factor=num_total_masks)
-        if self.gau_dice_enabled:
-            target_shape = mask_targets.shape[-2:]
-            mask_pred_rescale = F.interpolate(
-                mask_preds.unsqueeze(1),
-                target_shape,
-                mode='bilinear',
-                align_corners=False).squeeze(1)
-            additional_gau_dice = self.loss_gau_dice(mask_pred_rescale, mask_targets)
-            loss_dice += additional_gau_dice
+
         # mask loss
         # shape (num_queries, num_points) -> (num_queries * num_points, )
         mask_point_preds = mask_point_preds.reshape(-1)
@@ -394,8 +303,8 @@ class Mask2FormerHead(MaskFormerHead):
             mask_point_preds,
             mask_point_targets,
             avg_factor=num_total_masks * self.num_points)
-        return loss_cls, loss_mask, loss_dice, loss_proj
 
+        return loss_cls, loss_mask, loss_dice
 
     def forward_head(self, decoder_out, mask_feature, attn_mask_target_size):
         """Forward for head part which is called after every decoder layer.
@@ -517,4 +426,5 @@ class Mask2FormerHead(MaskFormerHead):
 
             cls_pred_list.append(cls_pred)
             mask_pred_list.append(mask_pred)
+
         return cls_pred_list, mask_pred_list

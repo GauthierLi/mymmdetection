@@ -42,7 +42,7 @@ def gau_dice_loss(pred,
             the loss. Defaults to None.
     """
     kld_loss = KLD(pred, target, eps)
-    loca_loss = location_loss(pred, target)
+    # loca_loss = location_loss(pred, target)
     if not mask2former_enabled:
         input = pred.flatten(1)
         gt = target.flatten(1).float()
@@ -58,9 +58,9 @@ def gau_dice_loss(pred,
             d = (2 * a) / (b + c)
         dice_loss = 1 - d
 
-        loss = dice_loss + kld_loss + loca_loss
+        loss = dice_loss + kld_loss #+ loca_loss
     else:
-        loss = kld_loss + loca_loss
+        loss = kld_loss #+ loca_loss
     if weight is not None:
         assert weight.ndim == dice_loss.ndim
         assert len(weight) == len(pred)
@@ -76,9 +76,11 @@ def edge_distribution(mask):
         h_proj: b,h
         w_proj: b,w
     """
+    b,h,w = mask.shape
+    h, w = float(h), float(w)
     mask=mask.type(torch.float32)
-    h_projection = nn.Softmax(dim=1)(mask.sum(dim=2))
-    w_projection = nn.Softmax(dim=1)(mask.sum(dim=1))
+    h_projection = mask.sum(dim=2) / w
+    w_projection = mask.sum(dim=1) / h
     return h_projection, w_projection
 
 def KLD(pred, gt, eps=1e-4):
@@ -92,8 +94,11 @@ def KLD(pred, gt, eps=1e-4):
     h_proj_pred, w_proj_pred = edge_distribution(pred)
     h_proj_gt, w_proj_gt = edge_distribution(gt)
 
-    kl_h = (h_proj_pred*torch.log((h_proj_pred+eps)/(h_proj_gt+eps))).sum(dim=1,keepdims=True)
-    kl_w = (w_proj_pred*torch.log((w_proj_pred+eps)/(w_proj_gt+eps))).sum(dim=1,keepdims=True)
+    # import pdb; pdb.set_trace()
+    kl_h = nn.BCELoss()(h_proj_pred, h_proj_gt)
+    kl_w = nn.BCELoss()(w_proj_pred, w_proj_gt)
+    # kl_h = (h_proj_pred*torch.log((h_proj_pred+eps)/(h_proj_gt+eps))).sum(dim=1,keepdims=True)
+    # kl_w = (w_proj_pred*torch.log((w_proj_pred+eps)/(w_proj_gt+eps))).sum(dim=1,keepdims=True)
 
     return kl_h + kl_w
 

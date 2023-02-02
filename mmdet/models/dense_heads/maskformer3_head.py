@@ -14,7 +14,7 @@ from .anchor_free_head import AnchorFreeHead
 
 
 @HEADS.register_module()
-class MaskFormerHead(AnchorFreeHead):
+class MaskFormerHead3(AnchorFreeHead):
     """Implements the MaskFormer head.
 
     See `Per-Pixel Classification is Not All You Need for Semantic
@@ -301,23 +301,38 @@ class MaskFormerHead(AnchorFreeHead):
         all_gt_labels_list = [gt_labels_list for _ in range(num_dec_layers)]
         all_gt_masks_list = [gt_masks_list for _ in range(num_dec_layers)]
         img_metas_list = [img_metas for _ in range(num_dec_layers)]
-        losses_cls, losses_mask, losses_dice = multi_apply(
+        losses_cls, losses_mask, losses_dice ,losses_proj, losses_gau= multi_apply(
             self.loss_single, all_cls_scores, all_mask_preds,
             all_gt_labels_list, all_gt_masks_list, img_metas_list)
 
         loss_dict = dict()
+        proj_enable = False if losses_proj[-1] is None else True
         # loss from the last decoder layer
         loss_dict['loss_cls'] = losses_cls[-1]
         loss_dict['loss_mask'] = losses_mask[-1]
         loss_dict['loss_dice'] = losses_dice[-1]
+        loss_dict['loss_gau'] = losses_gau[-1]
+        if proj_enable:
+            loss_dict['loss_proj'] = losses_proj[-1]
         # loss from other decoder layers
         num_dec_layer = 0
-        for loss_cls_i, loss_mask_i, loss_dice_i in zip(
-                losses_cls[:-1], losses_mask[:-1], losses_dice[:-1]):
-            loss_dict[f'd{num_dec_layer}.loss_cls'] = loss_cls_i
-            loss_dict[f'd{num_dec_layer}.loss_mask'] = loss_mask_i
-            loss_dict[f'd{num_dec_layer}.loss_dice'] = loss_dice_i
-            num_dec_layer += 1
+        if proj_enable:
+            for loss_cls_i, loss_mask_i, loss_dice_i, loss_proj_i, loss_gau_i in zip(
+                    losses_cls[:-1], losses_mask[:-1], losses_dice[:-1], losses_proj[:-1], losses_gau[:-1]):
+                loss_dict[f'd{num_dec_layer}.loss_cls'] = loss_cls_i
+                loss_dict[f'd{num_dec_layer}.loss_mask'] = loss_mask_i
+                loss_dict[f'd{num_dec_layer}.loss_dice'] = loss_dice_i
+                loss_dict[f'd{num_dec_layer}.loss_proj'] = loss_proj_i
+                loss_dict[f'd{num_dec_layer}.loss_gau'] = loss_gau_i
+                num_dec_layer += 1
+        else:
+            for loss_cls_i, loss_mask_i, loss_dice_i, loss_gau_i in zip(
+                    losses_cls[:-1], losses_mask[:-1], losses_dice[:-1], losses_gau[:-1]):
+                loss_dict[f'd{num_dec_layer}.loss_cls'] = loss_cls_i
+                loss_dict[f'd{num_dec_layer}.loss_mask'] = loss_mask_i
+                loss_dict[f'd{num_dec_layer}.loss_dice'] = loss_dice_i
+                loss_dict[f'd{num_dec_layer}.loss_gau'] = loss_gau_i
+                num_dec_layer += 1
         return loss_dict
 
     def loss_single(self, cls_scores, mask_preds, gt_labels_list,
@@ -385,7 +400,7 @@ class MaskFormerHead(AnchorFreeHead):
             # zero match
             loss_dice = mask_preds.sum()
             loss_mask = mask_preds.sum()
-            return loss_cls, loss_mask, loss_dice
+            return loss_cls, loss_mask, loss_dice, None
 
         # upsample to shape of target
         # shape (num_total_gts, h, w)
@@ -410,7 +425,7 @@ class MaskFormerHead(AnchorFreeHead):
         loss_mask = self.loss_mask(
             mask_preds, 1 - mask_targets, avg_factor=num_total_masks * h * w)
 
-        return loss_cls, loss_mask, loss_dice
+        return loss_cls, loss_mask, loss_dice, None
 
     def forward(self, feats, img_metas):
         """Forward function.

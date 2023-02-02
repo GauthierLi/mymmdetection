@@ -43,6 +43,8 @@ from .yolof_head import YOLOFHead
 from .yolox_head import YOLOXHead
 from .condinst_head import CondInstBoxHead, CondInstSegmHead, CondInstMaskBranch, CondInstMaskHead
 
+from .mask3former_head import Mask3FormerHead
+
 __all__ = [
     'AnchorFreeHead', 'AnchorHead', 'GuidedAnchorHead', 'FeatureAdaption',
     'RPNHead', 'GARPNHead', 'RetinaHead', 'RetinaSepBNHead', 'GARetinaHead',
@@ -56,5 +58,6 @@ __all__ = [
     'DecoupledSOLOHead', 'CenterNetHead', 'YOLOXHead',
     'DecoupledSOLOLightHead', 'LADHead', 'TOODHead', 'MaskFormerHead',
     'Mask2FormerHead', 'SOLOV2Head', 'DDODHead', 
-    'CondInstBoxHead', 'CondInstSegmHead', 'CondInstMaskBranch', 'CondInstMaskHead'
+    'CondInstBoxHead', 'CondInstSegmHead', 'CondInstMaskBranch', 'CondInstMaskHead',
+    'Mask3FormerHead'
 ]
