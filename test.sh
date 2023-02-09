@@ -1,1 +1,0 @@
-python tools/test.py /home/gauthierli/code/mmdetection/workdir/coco/mask2former/mask2former_r50_lsj_8x2_50e_coco.py /home/gauthierli/code/mmdetection/workdir/coco/mask2former/iter_515000.pth --out result.pkl --eval segm
