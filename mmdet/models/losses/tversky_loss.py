@@ -27,12 +27,16 @@ def focal_tversky_loss(pred, target, alpha=0.7, beta=0.75):
 @LOSSES.register_module()
 class FocalTverskyLoss(nn.Module):
 
-    def __init__(self, alpha=0.7, beta=0.75, loss_weight=1.0, activate=True):
+    def __init__(self, alpha=0.7, beta=0.75, loss_weight=1.0, activate=True, learnable=True):
         super(FocalTverskyLoss, self).__init__()
-        self.alpha = torch.tensor(alpha, dtype=torch.float32, requires_grad=True)
-        self.beta = torch.tensor(beta, dtype=torch.float32, requires_grad=True)
-        self.alpha = nn.Parameter(self.alpha)
-        self.beta = nn.Parameter(self.beta)
+        if learnable:
+            self.alpha = torch.tensor(alpha, dtype=torch.float32, requires_grad=True)
+            self.beta = torch.tensor(beta, dtype=torch.float32, requires_grad=True)
+            self.alpha = nn.Parameter(self.alpha)
+            self.beta = nn.Parameter(self.beta)
+        else:
+            self.alpha = alpha
+            self.beta = beta
         self.loss_weight = loss_weight
         self.activate = activate
     

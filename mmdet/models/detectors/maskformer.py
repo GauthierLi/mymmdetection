@@ -9,6 +9,7 @@ from mmdet.core.visualization import imshow_det_bboxes
 from ..builder import DETECTORS, build_backbone, build_head, build_neck
 from .single_stage import SingleStageDetector
 
+from mmdet.utils import show_feature
 
 @DETECTORS.register_module()
 class MaskFormer(SingleStageDetector):
@@ -150,6 +151,10 @@ class MaskFormer(SingleStageDetector):
                 ]
         """
         feats = self.extract_feat(imgs)
+        show_feature(feats[0], 
+                     f"{img_metas[0]['ori_filename'].split('.')[0]}_mask2former", 
+                     save_dir="/home/gauthierli/code/mmdetection/work_dirs/mask2former_ref/result",
+                     mode='all')
         mask_cls_results, mask_pred_results = self.panoptic_head.simple_test(
             feats, img_metas, **kwargs)
         results = self.panoptic_fusion_head.simple_test(

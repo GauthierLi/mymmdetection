@@ -7,6 +7,8 @@ from mmdet.core import bbox2result
 from ..builder import DETECTORS, build_backbone, build_head, build_neck
 from .base import BaseDetector
 
+from mmdet.utils import show_feature
+
 
 @DETECTORS.register_module()
 class SingleStageDetector(BaseDetector):
