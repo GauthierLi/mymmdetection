@@ -7,6 +7,8 @@ import numpy as np
 import os.path as osp
 import matplotlib.pyplot as plt
 
+from .monitors import buffer
+
 def multi_apply(func, *args):
     args_length = len(args)
     para_length = len(args[0])
@@ -25,7 +27,7 @@ class visual_feature:
         assert mode in ["mean", "top", "all"]
         self.mode = mode
         self.save_dir = save_dir
-        if not os.path.exists(self.save_dir):
+        if not (os.path.exists(self.save_dir) and show):
             os.makedirs(self.save_dir)
         self.show = show
     
@@ -45,7 +47,7 @@ class visual_feature:
         return result
             
 
-    def _vis_ndarry(self, feature:np.ndarray)->tuple:
+    def _vis_ndarray(self, feature:np.ndarray)->tuple:
         shape = feature.shape
         shape_length = len(shape)
         assert shape_length == 3 or shape_length == 2, f"Ndarray only support dimention 2 or 3, not implental for {shape_length}!"
@@ -78,10 +80,11 @@ class visual_feature:
             else:
                 fea_name = f'feature_{i}.jpg'
             fea_name = osp.join(self.save_dir, fea_name)
-            plt.imsave(fea_name, feature)
             if self.show:
                 plt.imshow(feature)
                 plt.show()
+            else:
+                plt.imsave(fea_name, feature)
         # print(f"=>Done! file saved at {os.path.join(os.getcwd(), self.save_dir)}")
 
 def show_feature(features, spetial_name=None, mode="mean",save_dir="featuremap", show=False):
@@ -96,3 +99,15 @@ def show_feature(features, spetial_name=None, mode="mean",save_dir="featuremap",
         multi_apply(vis, features, spetial_name_list)
     else:
         vis(features=features, spetial_name=spetial_name)
+
+class batch_feature_vuer(buffer):
+    def __init__(self, spetial_dir:str, mode='mean'):
+        super(batch_feature_vuer, self).__init__()
+        self.monitor = visual_feature(save_dir=spetial_dir)
+        self.save_dir = spetial_dir
+    
+    def save(self):
+        for key in self.buffer_dict:
+            img_name = key + ".jpg"
+            self.monitor(features=self.buffer_dict[key], spetial_name=self.save_dir + "/" + img_name)
+    

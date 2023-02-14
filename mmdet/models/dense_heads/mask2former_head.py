@@ -16,6 +16,9 @@ from ..builder import HEADS, build_loss
 from .anchor_free_head import AnchorFreeHead
 from .maskformer_head import MaskFormerHead
 
+from mmdet.models.losses import tversky_loss
+from mmdet.utils import buffer
+
 
 @HEADS.register_module()
 class Mask2FormerHead(MaskFormerHead):
@@ -133,6 +136,8 @@ class Mask2FormerHead(MaskFormerHead):
         self.loss_cls = build_loss(loss_cls)
         self.loss_mask = build_loss(loss_mask)
         self.loss_dice = build_loss(loss_dice)
+        self.buffer = buffer()
+
 
     def init_weights(self):
         for m in self.decoder_input_projs:
@@ -216,7 +221,7 @@ class Mask2FormerHead(MaskFormerHead):
                 neg_inds)
 
     def loss_single(self, cls_scores, mask_preds, gt_labels_list,
-                    gt_masks_list, img_metas):
+                    gt_masks_list, img_metas, decoder_layer):
         """Loss function for outputs from a single decoder layer.
 
         Args:
@@ -291,8 +296,16 @@ class Mask2FormerHead(MaskFormerHead):
             mask_preds.unsqueeze(1), points_coords).squeeze(1)
 
         # dice loss
-        loss_dice = self.loss_dice(
-            mask_point_preds, mask_point_targets, avg_factor=num_total_masks)
+        # loss_dice = self.loss_dice(
+        #     mask_point_preds, mask_point_targets, avg_factor=num_total_masks)
+        num_decoder = self.buffer.buffer_dict['num_decoder'] - 1
+        thr = (num_decoder - 1) // 2
+        if decoder_layer < thr:
+            loss_dice = tversky_loss(mask_point_preds, mask_point_targets, 1)
+        elif decoder_layer < num_decoder:
+            loss_dice = tversky_loss(mask_point_preds, mask_point_targets, 0)
+        else:
+            loss_dice = tversky_loss(mask_point_preds, mask_point_targets, 0.5)
 
         # mask loss
         # shape (num_queries, num_points) -> (num_queries * num_points, )

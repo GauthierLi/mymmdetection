@@ -301,9 +301,12 @@ class MaskFormerHead(AnchorFreeHead):
         all_gt_labels_list = [gt_labels_list for _ in range(num_dec_layers)]
         all_gt_masks_list = [gt_masks_list for _ in range(num_dec_layers)]
         img_metas_list = [img_metas for _ in range(num_dec_layers)]
+        if hasattr(self, 'buffer'):
+            self.buffer.update("num_decoder", num_dec_layers)
+
         losses_cls, losses_mask, losses_dice = multi_apply(
             self.loss_single, all_cls_scores, all_mask_preds,
-            all_gt_labels_list, all_gt_masks_list, img_metas_list)
+            all_gt_labels_list, all_gt_masks_list, img_metas_list, [i for i in range(num_dec_layers)])
 
         loss_dict = dict()
         # loss from the last decoder layer
