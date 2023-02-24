@@ -296,16 +296,8 @@ class Mask2FormerHead(MaskFormerHead):
             mask_preds.unsqueeze(1), points_coords).squeeze(1)
 
         # dice loss
-        # loss_dice = self.loss_dice(
-        #     mask_point_preds, mask_point_targets, avg_factor=num_total_masks)
-        num_decoder = self.buffer.buffer_dict['num_decoder'] - 1
-        thr = (num_decoder - 1) // 2
-        if decoder_layer < thr:
-            loss_dice = tversky_loss(mask_point_preds, mask_point_targets, 1)
-        elif decoder_layer < num_decoder:
-            loss_dice = tversky_loss(mask_point_preds, mask_point_targets, 0)
-        else:
-            loss_dice = tversky_loss(mask_point_preds, mask_point_targets, 0.5)
+        loss_dice = self.loss_dice(
+            mask_point_preds, mask_point_targets, avg_factor=num_total_masks)
 
         # mask loss
         # shape (num_queries, num_points) -> (num_queries * num_points, )

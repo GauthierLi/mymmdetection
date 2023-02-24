@@ -20,7 +20,7 @@ class shape_vuer:
             return [len(x), type(x[0])]
         
         shape = [len(x)] + self._shape_vue(x[0])
-        return tuple(shape)
+        return list(shape)
 
     def __call__(self, x:list):
         return self._shape_vue(x)

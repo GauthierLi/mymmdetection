@@ -6,6 +6,7 @@ import torch
 import numpy as np
 import os.path as osp
 import matplotlib.pyplot as plt
+import torch.nn.functional as F
 
 from .monitors import buffer
 
@@ -27,7 +28,7 @@ class visual_feature:
         assert mode in ["mean", "top", "all"]
         self.mode = mode
         self.save_dir = save_dir
-        if not (os.path.exists(self.save_dir) and show):
+        if not os.path.exists(self.save_dir) and show:
             os.makedirs(self.save_dir)
         self.show = show
     
@@ -40,7 +41,7 @@ class visual_feature:
             assert bs == 1, f"Warning: Shape:{shape}, only support bs 1, unless only show the first batch!"
             feature = feature.squeeze(dim=0)
             feature = feature.cpu().numpy()
-            result = self._vis_ndarry(feature)
+            result = self._vis_ndarray(feature)
         else:
             feature = feature.cpu().numpy()
             result = self._vis_ndarry(feature)
@@ -99,6 +100,10 @@ def show_feature(features, spetial_name=None, mode="mean",save_dir="featuremap",
         multi_apply(vis, features, spetial_name_list)
     else:
         vis(features=features, spetial_name=spetial_name)
+
+def upsample_like(src,tar):
+    src = F.upsample(src,size=tar.shape[-2:],mode='bilinear')
+    return src
 
 class batch_feature_vuer(buffer):
     def __init__(self, spetial_dir:str, mode='mean'):

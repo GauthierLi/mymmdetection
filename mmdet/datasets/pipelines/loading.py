@@ -331,6 +331,24 @@ class LoadAnnotations:
                 valid_polygons.append(polygon)
         return valid_polygons
 
+    def _load_coco_semantic_map(self, results):
+        instance_masks = results['gt_masks'].masks
+        labels = results['gt_labels']
+        label_set = set(labels)
+        label_dcit = dict()
+        for i, key in enumerate(label_set):
+            label_dcit[key] = i
+        shape = instance_masks.shape[-2:]
+        shape = (len(label_set),) + shape
+        semantic_mask = np.zeros(shape, dtype=np.uint8)
+        for i in range(len(labels)):
+            channel = label_dcit[labels[i]]
+            mask = instance_masks[i]
+            semantic_mask[channel] += mask
+        results['semantic_map'] = BitmapMasks(semantic_mask.clip(min=0, max=1), *shape[1:])
+        return results
+
+
     def _load_masks(self, results):
         """Private function to load mask annotations.
 
@@ -354,6 +372,8 @@ class LoadAnnotations:
                 w)
         results['gt_masks'] = gt_masks
         results['mask_fields'].append('gt_masks')
+
+        results = self._load_coco_semantic_map(results)
         return results
 
     def _load_semantic_seg(self, results):

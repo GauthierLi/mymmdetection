@@ -238,6 +238,11 @@ class DefaultFormatBundle:
                 results['gt_masks'],
                 padding_value=self.pad_val['masks'],
                 cpu_only=True)
+        if 'semantic_map' in results:
+            results['semantic_map'] = DC(
+                results['semantic_map'],
+                padding_value=self.pad_val['masks'],
+                cpu_only=True)
         if 'gt_semantic_seg' in results:
             results['gt_semantic_seg'] = DC(
                 to_tensor(results['gt_semantic_seg'][None, ...]),

@@ -10,6 +10,7 @@ from ..builder import DETECTORS, build_backbone, build_head, build_neck
 from .single_stage import SingleStageDetector
 
 from mmdet.utils import show_feature
+from mmcv.cnn import PLUGIN_LAYERS
 
 @DETECTORS.register_module()
 class MaskFormer(SingleStageDetector):
@@ -22,6 +23,7 @@ class MaskFormer(SingleStageDetector):
                  neck=None,
                  panoptic_head=None,
                  panoptic_fusion_head=None,
+                 semantic_sup=dict(type='SemanticSup'),
                  train_cfg=None,
                  test_cfg=None,
                  init_cfg=None):
@@ -49,6 +51,8 @@ class MaskFormer(SingleStageDetector):
         # BaseDetector.show_result default for instance segmentation
         if self.num_stuff_classes > 0:
             self.show_result = self._show_pan_result
+        
+        self.semantic_sup = PLUGIN_LAYERS.build(semantic_sup)
 
     def forward_dummy(self, img, img_metas):
         """Used for computing network flops. See
@@ -104,11 +108,12 @@ class MaskFormer(SingleStageDetector):
         # add batch_input_shape in img_metas
         super(SingleStageDetector, self).forward_train(img, img_metas)
         x = self.extract_feat(img)
+        semantic_loss = self.semantic_sup(x, kargs['semantic_map'], img_metas)
         losses = self.panoptic_head.forward_train(x, img_metas, gt_bboxes,
                                                   gt_labels, gt_masks,
                                                   gt_semantic_seg,
                                                   gt_bboxes_ignore)
-
+        losses.update(semantic_loss)
         return losses
 
     def simple_test(self, imgs, img_metas, **kwargs):
@@ -153,7 +158,7 @@ class MaskFormer(SingleStageDetector):
         feats = self.extract_feat(imgs)
         # show_feature(feats[0], 
         #              f"{img_metas[0]['ori_filename'].split('.')[0]}_mask2former", 
-        #              save_dir="/home/gauthierli/code/mmdetection/work_dirs/mask2former_ref/result",
+        #              save_dir="/home/gauthierli/code/mmdetection/work_dirs/mask2former_improved_tversky/result",
         #              mode='all')
         mask_cls_results, mask_pred_results = self.panoptic_head.simple_test(
             feats, img_metas, **kwargs)
