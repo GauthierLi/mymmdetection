@@ -6,7 +6,14 @@ model = dict(
     panoptic_head=dict(
         num_things_classes=num_things_classes,
         num_stuff_classes=num_stuff_classes,
-        loss_cls=dict(class_weight=[1.0] * num_classes + [0.1])),
+        loss_cls=dict(class_weight=[1.0] * num_classes + [0.1]),
+        loss_dice=dict(_delete_=True,
+                       type='FocalTverskyLoss',
+                       alpha=0.2, 
+                       beta=1, 
+                       loss_weight=1.0, 
+                       activate=True, 
+                       learnable=False)),
     panoptic_fusion_head=dict(
         num_things_classes=num_things_classes,
         num_stuff_classes=num_stuff_classes),
@@ -38,7 +45,7 @@ train_pipeline = [
     dict(type='Pad', size=image_size, pad_val=pad_cfg),
     dict(type='Normalize', **img_norm_cfg),
     dict(type='DefaultFormatBundle', img_to_float=True),
-    dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels', 'gt_masks', 'semantic_map']),
+    dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels', 'gt_masks']),
 ]
 test_pipeline = [
     dict(type='LoadImageFromFile'),

@@ -221,7 +221,7 @@ class Mask2FormerHead(MaskFormerHead):
                 neg_inds)
 
     def loss_single(self, cls_scores, mask_preds, gt_labels_list,
-                    gt_masks_list, img_metas, decoder_layer):
+                    gt_masks_list, img_metas):
         """Loss function for outputs from a single decoder layer.
 
         Args:

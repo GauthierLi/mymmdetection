@@ -53,4 +53,4 @@ data = dict(
         'annotations/instancesonly_filtered_gtFine_test.json',
         img_prefix=data_root + 'leftImg8bit/test/',
         pipeline=test_pipeline))
-evaluation = dict(metric=['bbox', 'segm'])
+evaluation = dict(metric=['bbox', 'segm'], save_best='segm_mAP')

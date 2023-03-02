@@ -1,6 +1,6 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import copy
-
+from mmdet.models.plugins import SemanticSup
 import mmcv
 import numpy as np
 
@@ -28,6 +28,7 @@ class MaskFormer(SingleStageDetector):
                  test_cfg=None,
                  init_cfg=None):
         super(SingleStageDetector, self).__init__(init_cfg=init_cfg)
+        self.indices = backbone['out_indices']
         self.backbone = build_backbone(backbone)
         if neck is not None:
             self.neck = build_neck(neck)
@@ -52,6 +53,7 @@ class MaskFormer(SingleStageDetector):
         if self.num_stuff_classes > 0:
             self.show_result = self._show_pan_result
         
+        semantic_sup.update({'indices':self.indices})
         self.semantic_sup = PLUGIN_LAYERS.build(semantic_sup)
 
     def forward_dummy(self, img, img_metas):
@@ -158,7 +160,7 @@ class MaskFormer(SingleStageDetector):
         feats = self.extract_feat(imgs)
         # show_feature(feats[0], 
         #              f"{img_metas[0]['ori_filename'].split('.')[0]}_mask2former", 
-        #              save_dir="/home/gauthierli/code/mmdetection/work_dirs/mask2former_improved_tversky/result",
+        #              save_dir="/home/gauthierli/code/mmdetection/work_dirs/mask2former_ref/result1",
         #              mode='all')
         mask_cls_results, mask_pred_results = self.panoptic_head.simple_test(
             feats, img_metas, **kwargs)

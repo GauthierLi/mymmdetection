@@ -21,6 +21,7 @@ from .varifocal_loss import VarifocalLoss
 
 from .gaudice import GauDiceLoss
 from .tversky_loss import FocalTverskyLoss, tversky_loss
+from .autoloss import AutoLoss
 
 __all__ = [
     'accuracy', 'Accuracy', 'cross_entropy', 'binary_cross_entropy',
@@ -32,5 +33,5 @@ __all__ = [
     'l1_loss', 'isr_p', 'carl_loss', 'AssociativeEmbeddingLoss',
     'GaussianFocalLoss', 'QualityFocalLoss', 'DistributionFocalLoss',
     'VarifocalLoss', 'KnowledgeDistillationKLDivLoss', 'SeesawLoss', 'DiceLoss',
-    'GauDiceLoss', 'FocalTverskyLoss', 'tversky_loss'
+    'GauDiceLoss', 'FocalTverskyLoss', 'tversky_loss', 'AutoLoss'
 ]
