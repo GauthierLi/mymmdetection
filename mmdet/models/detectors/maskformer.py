@@ -1,9 +1,10 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import copy
-from mmdet.models.plugins import SemanticSup
 import mmcv
+import torch
 import numpy as np
 
+from mmdet.models.plugins import SemanticSup
 from mmdet.core import INSTANCE_OFFSET, bbox2result
 from mmdet.core.visualization import imshow_det_bboxes
 from ..builder import DETECTORS, build_backbone, build_head, build_neck
@@ -11,6 +12,8 @@ from .single_stage import SingleStageDetector
 
 from mmdet.utils import show_feature
 from mmcv.cnn import PLUGIN_LAYERS
+from mmdet.models.plugins.spatialBias import spatialBias
+from mmcv.runner import force_fp32
 
 @DETECTORS.register_module()
 class MaskFormer(SingleStageDetector):
@@ -23,12 +26,14 @@ class MaskFormer(SingleStageDetector):
                  neck=None,
                  panoptic_head=None,
                  panoptic_fusion_head=None,
+                 semsup_on=False,
                  semantic_sup=dict(type='SemanticSup'),
                  train_cfg=None,
                  test_cfg=None,
                  init_cfg=None):
         super(SingleStageDetector, self).__init__(init_cfg=init_cfg)
-        self.indices = backbone['out_indices']
+        self.semSubSupervised = semsup_on
+        self.indices = (0,1,2,3)
         self.backbone = build_backbone(backbone)
         if neck is not None:
             self.neck = build_neck(neck)
@@ -53,8 +58,9 @@ class MaskFormer(SingleStageDetector):
         if self.num_stuff_classes > 0:
             self.show_result = self._show_pan_result
         
-        semantic_sup.update({'indices':self.indices})
-        self.semantic_sup = PLUGIN_LAYERS.build(semantic_sup)
+        if self.semSubSupervised:
+            semantic_sup.update({'indices':self.indices})
+            self.semantic_sup = PLUGIN_LAYERS.build(semantic_sup)
 
     def forward_dummy(self, img, img_metas):
         """Used for computing network flops. See
@@ -110,12 +116,17 @@ class MaskFormer(SingleStageDetector):
         # add batch_input_shape in img_metas
         super(SingleStageDetector, self).forward_train(img, img_metas)
         x = self.extract_feat(img)
-        semantic_loss = self.semantic_sup(x, kargs['semantic_map'], img_metas)
+        # import pdb; pdb.set_trace()
+        # show_feature(gt_semantic_list[0][0],f"semsub_feat_mask2former_gt", save_dir="/home/gauthierli/code/mmdetection/workdir/semantic_sup8/sem_see",mode='all')
+        # show_feature(gt_semantic_list[0][0],f"semsub_feat_mask2former_gt", save_dir="/home/gauthierli/code/mmdetection/workdir/semantic_sup8/sem_see",mode='all')
         losses = self.panoptic_head.forward_train(x, img_metas, gt_bboxes,
                                                   gt_labels, gt_masks,
                                                   gt_semantic_seg,
                                                   gt_bboxes_ignore)
-        losses.update(semantic_loss)
+        if self.semSubSupervised:
+            semantic_loss = self.semantic_sup(x, kargs['semantic_map'], img_metas)
+        # if self.semSubSupervised:
+            losses.update(semantic_loss)
         return losses
 
     def simple_test(self, imgs, img_metas, **kwargs):
@@ -164,6 +175,10 @@ class MaskFormer(SingleStageDetector):
         #              mode='all')
         mask_cls_results, mask_pred_results = self.panoptic_head.simple_test(
             feats, img_metas, **kwargs)
+        show_feature(1 - self.panoptic_head.buffer['mlmask_features'][-1], 
+                     f"{img_metas[0]['ori_filename'].split('.')[0]}_mask2former", 
+                     save_dir="/home/gauthierli/code/mmdetection/workdir/cityscapes/mask2former/res101_right/result_anti",
+                     mode='mean')
         results = self.panoptic_fusion_head.simple_test(
             mask_cls_results, mask_pred_results, img_metas, **kwargs)
         for i in range(len(results)):

@@ -40,11 +40,11 @@ class visual_feature:
             bs = shape[0]
             assert bs == 1, f"Warning: Shape:{shape}, only support bs 1, unless only show the first batch!"
             feature = feature.squeeze(dim=0)
-            feature = feature.cpu().numpy()
+            feature = feature.detach().cpu().numpy()
             result = self._vis_ndarray(feature)
         else:
-            feature = feature.cpu().numpy()
-            result = self._vis_ndarry(feature)
+            feature = feature.detach().cpu().numpy()
+            result = self._vis_ndarray(feature)
         return result
             
 
@@ -69,7 +69,7 @@ class visual_feature:
         elif isinstance(features, np.ndarray):
             show = self._vis_ndarray(features)
         else:
-            assert isinstance(features, list), "Feature should be represent as torch.ndarry, ndarray or list!"
+            assert not isinstance(features, list), "Feature should be represent as torch.ndarry, ndarray or list!"
             features = np.array(features)
             show = self._vis_ndarray(features)
         
@@ -81,6 +81,10 @@ class visual_feature:
             else:
                 fea_name = f'feature_{i}.jpg'
             fea_name = osp.join(self.save_dir, fea_name)
+            direct = fea_name.split('/')[:-1]
+            direct = "/".join(direct)
+            if not os.path.exists(direct):
+                os.makedirs(direct)
             if self.show:
                 plt.imshow(feature)
                 plt.show()

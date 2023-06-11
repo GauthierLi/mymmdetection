@@ -12,6 +12,8 @@ from mmdet.models.utils import preprocess_panoptic_gt
 from ..builder import HEADS, build_loss
 from .anchor_free_head import AnchorFreeHead
 
+from mmdet.utils import generate_random_mask, shape_noise_generate, step_add_noise
+
 
 @HEADS.register_module()
 class MaskFormerHead(AnchorFreeHead):
@@ -57,6 +59,7 @@ class MaskFormerHead(AnchorFreeHead):
                  num_things_classes=80,
                  num_stuff_classes=53,
                  num_queries=100,
+                 num_denoising_queries=100,
                  pixel_decoder=None,
                  enforce_decoder_input_project=False,
                  transformer_decoder=None,
@@ -124,6 +127,7 @@ class MaskFormerHead(AnchorFreeHead):
         self.loss_cls = build_loss(loss_cls)
         self.loss_mask = build_loss(loss_mask)
         self.loss_dice = build_loss(loss_dice)
+        self.num_denoising_queries = num_denoising_queries
 
     def init_weights(self):
         if isinstance(self.decoder_input_proj, Conv2d):
@@ -275,9 +279,37 @@ class MaskFormerHead(AnchorFreeHead):
         return (labels, label_weights, mask_targets, mask_weights, pos_inds,
                 neg_inds)
 
+    def loss_denoising(self, denoising_labels, denoising_mask_preds, gt_denoising_labels, gt_denoising_mask_preds):
+        num_imgs = denoising_labels.size(0)
+        gt_labels = torch.stack(gt_denoising_labels, dim=0)
+        gt_masks = torch.stack(gt_denoising_mask_preds, dim=0)
+
+        gt_labels, gt_masks = gt_labels.flatten(0,1), gt_masks.flatten(0,1)
+        denoising_labels, denoising_mask_preds = denoising_labels.flatten(0,1), denoising_mask_preds.flatten(0,1)
+
+        loss_cls = self.loss_cls(
+            denoising_labels,
+            gt_labels,
+            avg_factor=denoising_labels.size(0))
+        
+        shape = gt_masks.shape[-2:]
+        denoising_mask_preds = F.interpolate(denoising_mask_preds.unsqueeze(dim=0),
+                                             shape,
+                                             mode='bilinear',
+                                             align_corners=False).squeeze(dim=0)
+        loss_dice = self.loss_dice(
+            denoising_mask_preds, gt_masks, avg_factor=self.num_denoising_queries)
+        h, w = shape
+        loss_mask = self.loss_mask(
+            denoising_mask_preds, gt_masks, avg_factor=self.num_denoising_queries * h * w)
+        
+        return loss_cls, loss_mask, loss_dice
+        
+
+
     @force_fp32(apply_to=('all_cls_scores', 'all_mask_preds'))
     def loss(self, all_cls_scores, all_mask_preds, gt_labels_list,
-             gt_masks_list, img_metas):
+             gt_masks_list, img_metas, gt_denoising=None):
         """Loss function.
 
         Args:
@@ -298,28 +330,64 @@ class MaskFormerHead(AnchorFreeHead):
             dict[str, Tensor]: A dictionary of loss components.
         """
         num_dec_layers = len(all_cls_scores)
+        if gt_denoising is not None:
+            denoising_gt_labels, denoising_gt_masks = gt_denoising['labels'], gt_denoising['masks']
+            denoising_gt_labels_list = [denoising_gt_labels[i] for i in range(denoising_gt_labels.size(0))]
+            denoising_gt_masks_list = [denoising_gt_masks[i] for i in range(denoising_gt_masks.size(0))]
+            all_denoising_gt_labels_list = [denoising_gt_labels_list for _ in range(num_dec_layers)]
+            all_denoising_gt_masks_list = [denoising_gt_masks_list for _ in range(num_dec_layers)]
+
+            new_all_cls_scores = []
+            new_all_masks = []
+            all_denoising_labels = []
+            all_denoising_masks = []
+
+            for i in range(len(all_cls_scores)):
+                denoising_labels, cls_labels = all_cls_scores[i][:,:self.num_denoising_queries,:], all_cls_scores[i][:,self.num_denoising_queries:,:]
+                denoising_masks, masks_pred = all_mask_preds[i][:,:self.num_denoising_queries,:], all_mask_preds[i][:,self.num_denoising_queries:,:]
+                new_all_cls_scores.append(cls_labels)
+                new_all_masks.append(masks_pred)
+                all_denoising_labels.append(denoising_labels)
+                all_denoising_masks.append(denoising_masks)
+            
+            all_cls_scores = new_all_cls_scores
+            all_mask_preds = new_all_masks
+
         all_gt_labels_list = [gt_labels_list for _ in range(num_dec_layers)]
         all_gt_masks_list = [gt_masks_list for _ in range(num_dec_layers)]
         img_metas_list = [img_metas for _ in range(num_dec_layers)]
-        if hasattr(self, 'buffer'):
-            self.buffer.update("num_decoder", num_dec_layers)
+        # if hasattr(self, 'buffer'):
+        #     self.buffer.update("num_decoder", num_dec_layers)
 
         losses_cls, losses_mask, losses_dice = multi_apply(
             self.loss_single, all_cls_scores, all_mask_preds,
             all_gt_labels_list, all_gt_masks_list, img_metas_list)
+
+        losses_denoising_cls, losses_denoising_mask, losses_denoising_dice = multi_apply(
+            self.loss_denoising, all_denoising_labels, all_denoising_masks,
+            all_denoising_gt_labels_list, all_denoising_gt_masks_list)
 
         loss_dict = dict()
         # loss from the last decoder layer
         loss_dict['loss_cls'] = losses_cls[-1]
         loss_dict['loss_mask'] = losses_mask[-1]
         loss_dict['loss_dice'] = losses_dice[-1]
+
+        loss_dict['loss_denoising_cls'] = losses_denoising_cls[-1]
+        loss_dict['loss_denoising_mask'] = losses_denoising_mask[-1]
+        loss_dict['loss_denoising_dice'] = losses_denoising_dice[-1]
         # loss from other decoder layers
         num_dec_layer = 0
-        for loss_cls_i, loss_mask_i, loss_dice_i in zip(
-                losses_cls[:-1], losses_mask[:-1], losses_dice[:-1]):
+        for loss_cls_i, loss_mask_i, loss_dice_i, loss_denoising_cls_i, loss_denoising_mask_i, loss_denoising_dice_i in zip(
+                losses_cls[:-1], losses_mask[:-1], losses_dice[:-1],
+                losses_denoising_cls[:-1], losses_denoising_mask[:-1], losses_denoising_dice[:-1]):
             loss_dict[f'd{num_dec_layer}.loss_cls'] = loss_cls_i
             loss_dict[f'd{num_dec_layer}.loss_mask'] = loss_mask_i
             loss_dict[f'd{num_dec_layer}.loss_dice'] = loss_dice_i
+
+            loss_dict[f'd{num_dec_layer}.loss_denoising_cls'] = loss_denoising_cls_i
+            loss_dict[f'd{num_dec_layer}.loss_denoising_mask'] = loss_denoising_mask_i
+            loss_dict[f'd{num_dec_layer}.loss_denoising_dice'] = loss_denoising_dice_i
             num_dec_layer += 1
         return loss_dict
 
@@ -513,17 +581,24 @@ class MaskFormerHead(AnchorFreeHead):
         """
         # not consider ignoring bboxes
         assert gt_bboxes_ignore is None
-
-        # forward
-        all_cls_scores, all_mask_preds = self(feats, img_metas)
-
         # preprocess ground truth
         gt_labels, gt_masks = self.preprocess_gt(gt_labels, gt_masks,
                                                  gt_semantic_seg, img_metas)
+        
+        if hasattr(self, "denoising") and self.denoising:
+            denoising_masks, denoising_labels = generate_random_mask(gt_masks_list=gt_masks, gt_labels_list=gt_labels, number_of_query=self.num_denoising_queries, shape=(256,256))
 
-        # loss
-        losses = self.loss(all_cls_scores, all_mask_preds, gt_labels, gt_masks,
-                           img_metas)
+            # forward
+            all_cls_scores, all_mask_preds, gt_denoising = self(feats, img_metas, denoising_masks, denoising_labels)
+            # loss
+            losses = self.loss(all_cls_scores, all_mask_preds, gt_labels, gt_masks,
+                            img_metas, gt_denoising)
+        else:
+            all_cls_scores, all_mask_preds = self(feats, img_metas)
+
+            # loss
+            losses = self.loss(all_cls_scores, all_mask_preds, gt_labels, gt_masks,
+                            img_metas)
 
         return losses
 

@@ -218,7 +218,7 @@ class CustomDataset(Dataset):
             return self.prepare_test_img(idx)
         while True:
             data = self.prepare_train_img(idx)
-            if data is None or len(data['gt_labels']) is None:
+            if data is None or len(data['gt_labels']) is None or data['gt_masks'].data.masks.shape[0] == 0:
                 idx = self._rand_another(idx)
                 continue
             return data

@@ -3,12 +3,13 @@ import copy
 
 import torch
 import torch.nn as nn
+import matplotlib.pyplot as plt
 import torch.nn.functional as F
 from mmcv.cnn import Conv2d, build_plugin_layer, caffe2_xavier_init
 from mmcv.cnn.bricks.transformer import (build_positional_encoding,
                                          build_transformer_layer_sequence)
 from mmcv.ops import point_sample
-from mmcv.runner import ModuleList
+from mmcv.runner import ModuleList, force_fp32
 
 from mmdet.core import build_assigner, build_sampler, reduce_mean
 from mmdet.models.utils import get_uncertain_point_coords_with_randomness
@@ -16,9 +17,17 @@ from ..builder import HEADS, build_loss
 from .anchor_free_head import AnchorFreeHead
 from .maskformer_head import MaskFormerHead
 
+from mmdet.utils import show_feature, shape_noise_generate, step_add_noise
 from mmdet.models.losses import tversky_loss
-from mmdet.utils import buffer
+# from mmdet.utils import buffer
 
+def generate_boundary(mask, kernel_size=11):
+  assert (kernel_size + 1) % 2 == 0, "kernel size must be even number !"
+  max_pool = nn.MaxPool2d(kernel_size=kernel_size, stride=1, padding=int((kernel_size + 1) / 2))
+  tensor_dilate = max_pool(mask)
+  tensor_erode = -max_pool(-mask)
+  ten_reduce = tensor_dilate - tensor_erode
+  return ten_reduce
 
 @HEADS.register_module()
 class Mask2FormerHead(MaskFormerHead):
@@ -65,6 +74,7 @@ class Mask2FormerHead(MaskFormerHead):
                  num_things_classes=80,
                  num_stuff_classes=53,
                  num_queries=100,
+                 num_denoising_queries=100,
                  num_transformer_feat_level=3,
                  pixel_decoder=None,
                  enforce_decoder_input_project=False,
@@ -73,6 +83,8 @@ class Mask2FormerHead(MaskFormerHead):
                  loss_cls=None,
                  loss_mask=None,
                  loss_dice=None,
+                 boundary_dice=False,
+                 denoising=False,
                  train_cfg=None,
                  test_cfg=None,
                  init_cfg=None,
@@ -110,7 +122,7 @@ class Mask2FormerHead(MaskFormerHead):
                 self.decoder_input_projs.append(nn.Identity())
         self.decoder_positional_encoding = build_positional_encoding(
             positional_encoding)
-        self.query_embed = nn.Embedding(self.num_queries, feat_channels)
+        self.query_embed = nn.Embedding(self.num_queries + num_denoising_queries, feat_channels)
         self.query_feat = nn.Embedding(self.num_queries, feat_channels)
         # from low resolution to high resolution
         self.level_embed = nn.Embedding(self.num_transformer_feat_level,
@@ -136,7 +148,11 @@ class Mask2FormerHead(MaskFormerHead):
         self.loss_cls = build_loss(loss_cls)
         self.loss_mask = build_loss(loss_mask)
         self.loss_dice = build_loss(loss_dice)
-        self.buffer = buffer()
+        self.buffer = dict()
+        self.boundary_dice = boundary_dice
+        self.denoising = denoising
+        self.num_denoising_queries = num_denoising_queries
+        self.denoising_label_embedding = nn.Embedding(num_things_classes, feat_channels)
 
 
     def init_weights(self):
@@ -284,6 +300,13 @@ class Mask2FormerHead(MaskFormerHead):
             loss_mask = mask_preds.sum()
             return loss_cls, loss_mask, loss_dice
 
+        if self.boundary_dice:
+            ds = nn.AdaptiveAvgPool2d(mask_preds.shape[-2:])
+            # show_feature(mask_preds, "pred", mode='all', save_dir='/home/gauthierli/code/mmdetection/mini/m2f_boundary_dice/feat')
+            # show_feature(ds(mask_targets.to(torch.float32)), "gt", mode='all', save_dir='/home/gauthierli/code/mmdetection/mini/m2f_boundary_dice/feat')
+            # import pdb;pdb.set_trace()
+            loss_boundary = self.loss_dice(mask_preds, ds(mask_targets.to(torch.float32)), avg_factor=num_total_masks, boundary=True)
+        
         with torch.no_grad():
             points_coords = get_uncertain_point_coords_with_randomness(
                 mask_preds.unsqueeze(1), None, self.num_points,
@@ -296,7 +319,12 @@ class Mask2FormerHead(MaskFormerHead):
             mask_preds.unsqueeze(1), points_coords).squeeze(1)
 
         # dice loss
-        loss_dice = self.loss_dice(
+        if self.boundary_dice:
+            loss_dice = self.loss_dice(
+            mask_point_preds, mask_point_targets, avg_factor=num_total_masks)
+            loss_dice += loss_boundary
+        else:
+            loss_dice = self.loss_dice(
             mask_point_preds, mask_point_targets, avg_factor=num_total_masks)
 
         # mask loss
@@ -311,7 +339,7 @@ class Mask2FormerHead(MaskFormerHead):
 
         return loss_cls, loss_mask, loss_dice
 
-    def forward_head(self, decoder_out, mask_feature, attn_mask_target_size):
+    def forward_head(self, decoder_out, mask_feature, attn_mask_target_size, denoising_gt_masks=None):
         """Forward for head part which is called after every decoder layer.
 
         Args:
@@ -344,16 +372,37 @@ class Mask2FormerHead(MaskFormerHead):
             attn_mask_target_size,
             mode='bilinear',
             align_corners=False)
+        if denoising_gt_masks is not None:
+            denoising_attn_mask = F.interpolate(
+                denoising_gt_masks,
+                attn_mask_target_size,
+                mode='nearest',
+                align_corners=None)
+            # denoising part first
+            attn_mask = torch.concat([denoising_attn_mask, attn_mask[:,-self.num_queries:,:,:].sigmoid()], dim=1)
+
+            # ATTN_MASK for self attension
+            self_attn_mask = torch.zeros((attn_mask.size(0),) + (self.num_heads, 
+                    self.num_denoising_queries+self.num_queries, self.num_denoising_queries+self.num_queries),device=attn_mask.device, dtype=attn_mask.dtype)
+            self_attn_mask[:,:,:int(self_attn_mask.size(2)/2),:int(self_attn_mask.size(2)/2)] = 1
+            self_attn_mask[:,:,int(self_attn_mask.size(2)/2):,int(self_attn_mask.size(2)/2):] = 1
+            self_attn_mask = self_attn_mask.flatten(0, 1)
+            self_attn_mask = self_attn_mask < 0.5
+
+        # show_feature(attn_mask.sigmoid(), mode='all', save_dir='/home/gauthierli/code/mmdetection/workdir/spatial_bias_3ffn_adp32_8head_additive_semsupv3/seesee')
         # shape (batch_size, num_queries, h, w) ->
         #   (batch_size * num_head, num_queries, h*w)
         attn_mask = attn_mask.flatten(2).unsqueeze(1).repeat(
             (1, self.num_heads, 1, 1)).flatten(0, 1)
-        attn_mask = attn_mask.sigmoid() < 0.5
+        # attn_mask = attn_mask.sigmoid() < 0.5
+        attn_mask = attn_mask < 0.5
         attn_mask = attn_mask.detach()
 
+        if denoising_gt_masks is not None:
+            return cls_pred, mask_pred, attn_mask, self_attn_mask
         return cls_pred, mask_pred, attn_mask
 
-    def forward(self, feats, img_metas):
+    def forward(self, feats, img_metas, denoising_gt_masks=None, denoising_gt_labels=None):
         """Forward function.
 
         Args:
@@ -374,6 +423,7 @@ class Mask2FormerHead(MaskFormerHead):
         """
         batch_size = len(img_metas)
         mask_features, multi_scale_memorys = self.pixel_decoder(feats)
+        self.buffer["mlmask_features"] = multi_scale_memorys+[mask_features]
         # multi_scale_memorys (from low resolution to high resolution)
         decoder_inputs = []
         decoder_positional_encodings = []
@@ -398,11 +448,23 @@ class Mask2FormerHead(MaskFormerHead):
             (1, batch_size, 1))
         query_embed = self.query_embed.weight.unsqueeze(1).repeat(
             (1, batch_size, 1))
+        if denoising_gt_labels is None:
+            query_embed = query_embed[self.num_queries:,:]
 
         cls_pred_list = []
         mask_pred_list = []
-        cls_pred, mask_pred, attn_mask = self.forward_head(
-            query_feat, mask_features, multi_scale_memorys[0].shape[-2:])
+        # TODO: add self.training judgement
+        if denoising_gt_labels is not None:
+            gt_denoising = {'masks': denoising_gt_masks, 'labels': denoising_gt_labels}
+            noise = shape_noise_generate(denoising_gt_masks.shape, self.num_transformer_decoder_layers+1, 0.02)
+            denoising_gt_masks = step_add_noise(denoising_gt_masks, noise)
+            denoising_gt_labels = self.denoising_label_embedding(denoising_gt_labels).permute(1,0,2)
+            query_feat = torch.concat([denoising_gt_labels, query_feat], dim=0)
+            cls_pred, mask_pred, attn_mask, self_attn_mask = self.forward_head(
+            query_feat, mask_features, multi_scale_memorys[0].shape[-2:], denoising_gt_masks[0])
+        else:
+            cls_pred, mask_pred, attn_mask = self.forward_head(
+                query_feat, mask_features, multi_scale_memorys[0].shape[-2:])
         cls_pred_list.append(cls_pred)
         mask_pred_list.append(mask_pred)
 
@@ -414,7 +476,10 @@ class Mask2FormerHead(MaskFormerHead):
 
             # cross_attn + self_attn
             layer = self.transformer_decoder.layers[i]
-            attn_masks = [attn_mask, None]
+            if denoising_gt_labels is not None:
+                attn_masks = [attn_mask, self_attn_mask]
+            else:
+                attn_masks = [attn_mask, None]
             query_feat = layer(
                 query=query_feat,
                 key=decoder_inputs[level_idx],
@@ -425,11 +490,18 @@ class Mask2FormerHead(MaskFormerHead):
                 query_key_padding_mask=None,
                 # here we do not apply masking on padded region
                 key_padding_mask=None)
-            cls_pred, mask_pred, attn_mask = self.forward_head(
-                query_feat, mask_features, multi_scale_memorys[
-                    (i + 1) % self.num_transformer_feat_level].shape[-2:])
 
+            if denoising_gt_labels is not None:
+                cls_pred, mask_pred, attn_mask,self_attn_mask = self.forward_head(
+                query_feat, mask_features, multi_scale_memorys[
+                    (i + 1) % self.num_transformer_feat_level].shape[-2:], denoising_gt_masks[i+1])
+            else:
+                cls_pred, mask_pred, attn_mask = self.forward_head(
+                    query_feat, mask_features, multi_scale_memorys[
+                        (i + 1) % self.num_transformer_feat_level].shape[-2:])
             cls_pred_list.append(cls_pred)
             mask_pred_list.append(mask_pred)
-
-        return cls_pred_list, mask_pred_list
+        if denoising_gt_labels is None:
+            return cls_pred_list, mask_pred_list
+        else:
+            return cls_pred_list, mask_pred_list, gt_denoising

@@ -333,19 +333,20 @@ class LoadAnnotations:
 
     def _load_coco_semantic_map(self, results):
         instance_masks = results['gt_masks'].masks
-        labels = results['gt_labels']
-        label_set = set(labels)
-        label_dcit = dict()
-        for i, key in enumerate(label_set):
-            label_dcit[key] = i
-        shape = instance_masks.shape[-2:]
-        shape = (len(label_set),) + shape
-        semantic_mask = np.zeros(shape, dtype=np.uint8)
-        for i in range(len(labels)):
-            channel = label_dcit[labels[i]]
-            mask = instance_masks[i]
-            semantic_mask[channel] += mask
-        results['semantic_map'] = BitmapMasks(semantic_mask.clip(min=0, max=1), *shape[1:])
+        # labels = results['gt_labels']
+        # label_set = set(labels)
+        # label_dcit = dict()
+        # for i, key in enumerate(label_set):
+        #     label_dcit[key] = i
+        # shape = instance_masks.shape[-2:]
+        # shape = (len(label_set),) + shape
+        # semantic_mask = np.zeros(shape, dtype=np.uint8)
+        # for i in range(len(labels)):
+        #     channel = label_dcit[labels[i]]
+        #     mask = instance_masks[i]
+        #     semantic_mask[channel] += mask
+        # results['semantic_map'] = BitmapMasks(semantic_mask.clip(min=0, max=1), *shape[1:])
+        results['semantic_map'] = BitmapMasks(instance_masks.clip(min=0, max=1), *instance_masks.shape[1:])
         return results
 
 

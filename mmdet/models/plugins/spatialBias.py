@@ -5,6 +5,8 @@ import torch.nn.functional as F
 
 from einops import rearrange
 from mmcv.cnn import PLUGIN_LAYERS
+from mmdet.utils import show_feature
+
 
 class SelfAttention(nn.Module):
     def __init__(self, dim, num_heads):
@@ -44,7 +46,7 @@ class SelfAttention(nn.Module):
         return x
 
 @PLUGIN_LAYERS.register_module()
-class spatialBias(nn.Module):
+class spatialBias_v1(nn.Module):
     def __init__(self, in_channels, hidden_dim=256, **kwargs):
         super().__init__()
         self.dim_reduction = nn.Sequential(*[nn.Conv2d(in_channels, hidden_dim, kernel_size=1),
@@ -70,6 +72,64 @@ class spatialBias(nn.Module):
         out = self.fuse(x_)
         return out
 
+@PLUGIN_LAYERS.register_module()
+class spatialBias_v2_best(nn.Module):
+    def __init__(self, in_channels, hidden_dim=256, **kwargs):
+        super().__init__()
+        self.dim_reduction = nn.Sequential(*[nn.Conv2d(in_channels, hidden_dim, kernel_size=1),
+                                            nn.BatchNorm2d(hidden_dim),
+                                            nn.ReLU()])
+        self.apt_pool = nn.AdaptiveAvgPool2d((16,16))
+        self.att = SelfAttention(hidden_dim, 1)
+        self.position_compress = nn.Sequential(*[nn.Conv2d(hidden_dim, in_channels, kernel_size=1),
+                                                nn.BatchNorm2d(in_channels),
+                                                nn.ReLU()])
+        # self.fuse = nn.Sequential(*[nn.Conv2d(in_channels + 1, in_channels, kernel_size=1),
+        #                             nn.BatchNorm2d(in_channels)])
+    
+    def forward(self, x):
+        x_red = self.dim_reduction(x)
+        x_red_reshape = self.apt_pool(x_red)
+        b_,c_,h_,w_ = x_red_reshape.shape
+        x_seq = rearrange(x_red_reshape, 'b c h w -> b (h w) c')
+        x_seq_embedding = self.att(x_seq)
+        x_seq_embedding_ = rearrange(x_seq_embedding, 'b (h w) c -> b c h w', h=h_)
+        spatial_bias = self.position_compress(x_seq_embedding_)
+        spatial_bias_ = F.interpolate(spatial_bias, size=(x.shape[-2:]),mode='bilinear')
+        # x_ = torch.cat([x,spatial_bias_], dim=1)
+        # out = self.fuse(x_)
+        return x + spatial_bias_
+
+@PLUGIN_LAYERS.register_module()
+class spatialBias(nn.Module):
+    def __init__(self, in_channels, hidden_dim=256*4, **kwargs):
+        super().__init__()
+        self.dim_reduction = nn.Sequential(*[nn.Conv2d(in_channels, hidden_dim, kernel_size=1),
+                                            nn.BatchNorm2d(hidden_dim),
+                                            nn.ReLU()])
+        self.apt_pool = nn.AdaptiveAvgPool2d((32,32))
+        self.att = SelfAttention(hidden_dim, 8)
+        self.position_compress = nn.Sequential(*[nn.Conv2d(hidden_dim, 512, kernel_size=1),
+                                                 nn.ReLU(),
+                                                 nn.Conv2d(512, 512, kernel_size=1),
+                                                 nn.ReLU(),
+                                                 nn.Conv2d(512, in_channels, kernel_size=1)])
+        # self.fuse = nn.Sequential(*[nn.Conv2d(in_channels + 1, in_channels, kernel_size=1),
+        #                             nn.BatchNorm2d(in_channels)])
+    
+    def forward(self, x):
+        x_red = self.dim_reduction(x)
+        x_red_reshape = self.apt_pool(x_red)
+        b_,c_,h_,w_ = x_red_reshape.shape
+        x_seq = rearrange(x_red_reshape, 'b c h w -> b (h w) c')
+        x_seq_embedding = self.att(x_seq)
+        x_seq_embedding_ = rearrange(x_seq_embedding, 'b (h w) c -> b c h w', h=h_)
+        spatial_bias = self.position_compress(x_seq_embedding_)
+        spatial_bias_ = F.interpolate(spatial_bias, size=(x.shape[-2:]),mode='bilinear')
+        # x_ = torch.cat([x,spatial_bias_], dim=1)
+        # out = self.fuse(x_)
+        return x + spatial_bias_
+    
 # if __name__ == '__main__':
 #     model = spatialBias(256)
 #     a = torch.rand((2,256,17,17))

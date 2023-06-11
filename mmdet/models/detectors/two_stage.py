@@ -5,6 +5,7 @@ import torch
 
 from ..builder import DETECTORS, build_backbone, build_head, build_neck
 from .base import BaseDetector
+from mmcv.cnn import PLUGIN_LAYERS
 
 
 @DETECTORS.register_module()

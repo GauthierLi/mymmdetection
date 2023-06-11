@@ -48,7 +48,7 @@ class CityscapesDataset(CocoDataset):
             if self.filter_empty_gt and (self.img_ids[i] not in ids_in_cat
                                          or all_iscrowd):
                 continue
-            if min(img_info['width'], img_info['height']) >= min_size:
+            if min(img_info['width'], img_info['height']) >= min_size and len(ann_info) != 0:
                 valid_inds.append(i)
                 valid_img_ids.append(img_id)
         self.img_ids = valid_img_ids

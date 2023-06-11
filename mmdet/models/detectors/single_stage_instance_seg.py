@@ -9,6 +9,7 @@ import torch
 from mmdet.core.visualization.image import imshow_det_bboxes
 from ..builder import DETECTORS, build_backbone, build_head, build_neck
 from .base import BaseDetector
+from mmcv.cnn import PLUGIN_LAYERS
 
 INF = 1e8
 
@@ -22,6 +23,8 @@ class SingleStageInstanceSegmentor(BaseDetector):
                  neck=None,
                  bbox_head=None,
                  mask_head=None,
+                 semsup_on=False,
+                 semantic_sup=dict(type='SemanticSup'),
                  train_cfg=None,
                  test_cfg=None,
                  pretrained=None,
@@ -52,6 +55,12 @@ class SingleStageInstanceSegmentor(BaseDetector):
 
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
+
+        self.semSubSupervised = semsup_on
+        self.indices = (0,0,0,0,0)
+        if self.semSubSupervised:
+            semantic_sup.update({'indices':self.indices})
+            self.semantic_sup = PLUGIN_LAYERS.build(semantic_sup)
 
     def extract_feat(self, img):
         """Directly extract features from the backbone and neck."""
@@ -103,6 +112,8 @@ class SingleStageInstanceSegmentor(BaseDetector):
             for gt_mask in gt_masks
         ]
         x = self.extract_feat(img)
+        if self.semSubSupervised:
+            semantic_loss = self.semantic_sup(x, kwargs['semantic_map'], img_metas)
         losses = dict()
 
         # CondInst and YOLACT have bbox_head
@@ -136,6 +147,8 @@ class SingleStageInstanceSegmentor(BaseDetector):
         # avoid loss override
         assert not set(mask_loss.keys()) & set(losses.keys())
 
+        if self.semSubSupervised:
+            losses.update(semantic_loss)
         losses.update(mask_loss)
         return losses
 

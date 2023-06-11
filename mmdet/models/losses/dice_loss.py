@@ -103,6 +103,7 @@ class DiceLoss(nn.Module):
     def forward(self,
                 pred,
                 target,
+                boundary=False,
                 weight=None,
                 reduction_override=None,
                 avg_factor=None):
@@ -134,6 +135,19 @@ class DiceLoss(nn.Module):
             else:
                 raise NotImplementedError
 
+        if boundary:
+            thr = 0.8
+            pred_boundary = generate_boundary(pred) > thr
+            target_boundary = generate_boundary(target) > thr
+            boundary_mask_area = pred_boundary + target_boundary
+            pred = torch.masked_select(pred, boundary_mask_area).unsqueeze(dim=0)
+            target = torch.masked_select(target, boundary_mask_area).unsqueeze(dim=0)
+            # from mmdet.utils import show_feature
+            # show_feature(pred_boundary.to(torch.float), "pred", mode='all', save_dir='/home/gauthierli/code/mmdetection/workdir/boundary_dice_v1/boundary')
+            # show_feature(target_boundary.to(torch.float), "target", mode='all', save_dir='/home/gauthierli/code/mmdetection/workdir/boundary_dice_v1/boundary')
+            # show_feature(boundary_mask_area.to(torch.float), "total", mode='all', save_dir='/home/gauthierli/code/mmdetection/workdir/boundary_dice_v1/boundary')
+            # import pdb; pdb.set_trace()
+
         loss = self.loss_weight * dice_loss(
             pred,
             target,
@@ -144,3 +158,11 @@ class DiceLoss(nn.Module):
             avg_factor=avg_factor)
 
         return loss
+
+def generate_boundary(mask, kernel_size=11):
+  assert (kernel_size - 1) % 2 == 0, "kernel size must be even number !"
+  max_pool = nn.MaxPool2d(kernel_size=kernel_size, stride=1, padding=int((kernel_size - 1) / 2))
+  tensor_dilate = max_pool(mask.detach())
+  tensor_erode = -max_pool(-mask.detach())
+  ten_reduce = tensor_dilate - tensor_erode
+  return ten_reduce

@@ -14,6 +14,7 @@ class Mask2Former(MaskFormer):
                  neck=None,
                  panoptic_head=None,
                  panoptic_fusion_head=None,
+                 semsup_on=False,
                  train_cfg=None,
                  test_cfg=None,
                  init_cfg=None):
@@ -22,6 +23,7 @@ class Mask2Former(MaskFormer):
             neck=neck,
             panoptic_head=panoptic_head,
             panoptic_fusion_head=panoptic_fusion_head,
+            semsup_on=semsup_on,
             train_cfg=train_cfg,
             test_cfg=test_cfg,
             init_cfg=init_cfg)
