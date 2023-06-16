@@ -175,10 +175,10 @@ class MaskFormer(SingleStageDetector):
         #              mode='all')
         mask_cls_results, mask_pred_results = self.panoptic_head.simple_test(
             feats, img_metas, **kwargs)
-        show_feature(1 - self.panoptic_head.buffer['mlmask_features'][-1], 
-                     f"{img_metas[0]['ori_filename'].split('.')[0]}_mask2former", 
-                     save_dir="/home/gauthierli/code/mmdetection/workdir/cityscapes/mask2former/res101_right/result_anti",
-                     mode='mean')
+        # show_feature(1 - self.panoptic_head.buffer['mlmask_features'][-1], 
+        #              f"{img_metas[0]['ori_filename'].split('.')[0]}_mask2former", 
+        #              save_dir="/home/gauthierli/code/mmdetection/workdir/cityscapes/mask2former/res101_right/result_anti",
+        #              mode='mean')
         results = self.panoptic_fusion_head.simple_test(
             mask_cls_results, mask_pred_results, img_metas, **kwargs)
         for i in range(len(results)):

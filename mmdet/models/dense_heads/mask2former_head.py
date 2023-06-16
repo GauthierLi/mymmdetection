@@ -122,7 +122,10 @@ class Mask2FormerHead(MaskFormerHead):
                 self.decoder_input_projs.append(nn.Identity())
         self.decoder_positional_encoding = build_positional_encoding(
             positional_encoding)
-        self.query_embed = nn.Embedding(self.num_queries + num_denoising_queries, feat_channels)
+        if denoising:
+            self.query_embed = nn.Embedding(self.num_queries + num_denoising_queries, feat_channels)
+        else:
+            self.query_embed = nn.Embedding(self.num_queries, feat_channels)
         self.query_feat = nn.Embedding(self.num_queries, feat_channels)
         # from low resolution to high resolution
         self.level_embed = nn.Embedding(self.num_transformer_feat_level,
@@ -395,7 +398,10 @@ class Mask2FormerHead(MaskFormerHead):
         attn_mask = attn_mask.flatten(2).unsqueeze(1).repeat(
             (1, self.num_heads, 1, 1)).flatten(0, 1)
         # attn_mask = attn_mask.sigmoid() < 0.5
-        attn_mask = attn_mask < 0.5
+        if denoising_gt_masks is not None:
+            attn_mask = attn_mask < 0.5
+        else:
+            attn_mask = attn_mask.sigmoid() < 0.5
         attn_mask = attn_mask.detach()
 
         if denoising_gt_masks is not None:
@@ -448,7 +454,7 @@ class Mask2FormerHead(MaskFormerHead):
             (1, batch_size, 1))
         query_embed = self.query_embed.weight.unsqueeze(1).repeat(
             (1, batch_size, 1))
-        if denoising_gt_labels is None:
+        if denoising_gt_labels is None and self.denoising:
             query_embed = query_embed[self.num_queries:,:]
 
         cls_pred_list = []
