@@ -62,7 +62,7 @@ class MaskFormer(SingleStageDetector):
             semantic_sup.update({'indices':self.indices})
             self.semantic_sup = PLUGIN_LAYERS.build(semantic_sup)
 
-    def forward_dummy(self, img, img_metas):
+    def forward_dummy(self, img):
         """Used for computing network flops. See
         `mmdetection/tools/analysis_tools/get_flops.py`
 
@@ -75,10 +75,21 @@ class MaskFormer(SingleStageDetector):
                 For details on the values of these keys see
                 `mmdet/datasets/pipelines/formatting.py:Collect`.
         """
-        super(SingleStageDetector, self).forward_train(img, img_metas)
+        batch_size, _, height, width = img.shape
+        dummy_img_metas = [
+            dict(
+                batch_input_shape=(height, width),
+                img_shape=(height, width, 3)) for _ in range(batch_size)
+        ]
+        super(SingleStageDetector, self).forward_train(img, dummy_img_metas)
         x = self.extract_feat(img)
-        outs = self.panoptic_head(x, img_metas)
+        if not hasattr(self.panoptic_head, 'denoising'):
+            outs = self.panoptic_head(x, dummy_img_metas, forward_dummy=False)
+        else:
+            outs = self.panoptic_head(x, dummy_img_metas, forward_dummy=self.panoptic_head.denoising)
+
         return outs
+
 
     def forward_train(self,
                       img,

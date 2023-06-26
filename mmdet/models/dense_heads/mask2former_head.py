@@ -85,6 +85,7 @@ class Mask2FormerHead(MaskFormerHead):
                  loss_dice=None,
                  boundary_dice=False,
                  denoising=False,
+                 denoising_coefficient=0.02,
                  train_cfg=None,
                  test_cfg=None,
                  init_cfg=None,
@@ -156,6 +157,7 @@ class Mask2FormerHead(MaskFormerHead):
         self.denoising = denoising
         self.num_denoising_queries = num_denoising_queries
         self.denoising_label_embedding = nn.Embedding(num_things_classes, feat_channels)
+        self.denoising_coefficient = denoising_coefficient
 
 
     def init_weights(self):
@@ -408,7 +410,7 @@ class Mask2FormerHead(MaskFormerHead):
             return cls_pred, mask_pred, attn_mask, self_attn_mask
         return cls_pred, mask_pred, attn_mask
 
-    def forward(self, feats, img_metas, denoising_gt_masks=None, denoising_gt_labels=None):
+    def forward(self, feats, img_metas, denoising_gt_masks=None, denoising_gt_labels=None, forward_dummy=False):
         """Forward function.
 
         Args:
@@ -428,6 +430,9 @@ class Mask2FormerHead(MaskFormerHead):
                  h, w).
         """
         batch_size = len(img_metas)
+        if forward_dummy:
+            denoising_gt_masks = torch.zeros((batch_size, self.num_denoising_queries, 256,256)).to(feats[0].device)
+            denoising_gt_labels = torch.zeros((batch_size, self.num_denoising_queries),dtype=torch.int64).to(feats[0].device)
         mask_features, multi_scale_memorys = self.pixel_decoder(feats)
         self.buffer["mlmask_features"] = multi_scale_memorys+[mask_features]
         # multi_scale_memorys (from low resolution to high resolution)
@@ -462,7 +467,7 @@ class Mask2FormerHead(MaskFormerHead):
         # TODO: add self.training judgement
         if denoising_gt_labels is not None:
             gt_denoising = {'masks': denoising_gt_masks, 'labels': denoising_gt_labels}
-            noise = shape_noise_generate(denoising_gt_masks.shape, self.num_transformer_decoder_layers+1, 0.02)
+            noise = shape_noise_generate(denoising_gt_masks.shape, self.num_transformer_decoder_layers+1, self.denoising_coefficient)
             denoising_gt_masks = step_add_noise(denoising_gt_masks, noise)
             denoising_gt_labels = self.denoising_label_embedding(denoising_gt_labels).permute(1,0,2)
             query_feat = torch.concat([denoising_gt_labels, query_feat], dim=0)

@@ -363,9 +363,6 @@ class MaskFormerHead(AnchorFreeHead):
             self.loss_single, all_cls_scores, all_mask_preds,
             all_gt_labels_list, all_gt_masks_list, img_metas_list)
 
-        losses_denoising_cls, losses_denoising_mask, losses_denoising_dice = multi_apply(
-            self.loss_denoising, all_denoising_labels, all_denoising_masks,
-            all_denoising_gt_labels_list, all_denoising_gt_masks_list)
 
         loss_dict = dict()
         # loss from the last decoder layer
@@ -373,22 +370,36 @@ class MaskFormerHead(AnchorFreeHead):
         loss_dict['loss_mask'] = losses_mask[-1]
         loss_dict['loss_dice'] = losses_dice[-1]
 
-        loss_dict['loss_denoising_cls'] = losses_denoising_cls[-1]
-        loss_dict['loss_denoising_mask'] = losses_denoising_mask[-1]
-        loss_dict['loss_denoising_dice'] = losses_denoising_dice[-1]
-        # loss from other decoder layers
-        num_dec_layer = 0
-        for loss_cls_i, loss_mask_i, loss_dice_i, loss_denoising_cls_i, loss_denoising_mask_i, loss_denoising_dice_i in zip(
-                losses_cls[:-1], losses_mask[:-1], losses_dice[:-1],
-                losses_denoising_cls[:-1], losses_denoising_mask[:-1], losses_denoising_dice[:-1]):
-            loss_dict[f'd{num_dec_layer}.loss_cls'] = loss_cls_i
-            loss_dict[f'd{num_dec_layer}.loss_mask'] = loss_mask_i
-            loss_dict[f'd{num_dec_layer}.loss_dice'] = loss_dice_i
+        if gt_denoising is not None:
+            losses_denoising_cls, losses_denoising_mask, losses_denoising_dice = multi_apply(
+                self.loss_denoising, all_denoising_labels, all_denoising_masks,
+                all_denoising_gt_labels_list, all_denoising_gt_masks_list)
 
-            loss_dict[f'd{num_dec_layer}.loss_denoising_cls'] = loss_denoising_cls_i
-            loss_dict[f'd{num_dec_layer}.loss_denoising_mask'] = loss_denoising_mask_i
-            loss_dict[f'd{num_dec_layer}.loss_denoising_dice'] = loss_denoising_dice_i
-            num_dec_layer += 1
+            loss_dict['loss_denoising_cls'] = losses_denoising_cls[-1]
+            loss_dict['loss_denoising_mask'] = losses_denoising_mask[-1]
+            loss_dict['loss_denoising_dice'] = losses_denoising_dice[-1]
+            # loss from other decoder layers
+            num_dec_layer = 0
+            for loss_cls_i, loss_mask_i, loss_dice_i, loss_denoising_cls_i, loss_denoising_mask_i, loss_denoising_dice_i in zip(
+                    losses_cls[:-1], losses_mask[:-1], losses_dice[:-1],
+                    losses_denoising_cls[:-1], losses_denoising_mask[:-1], losses_denoising_dice[:-1]):
+                loss_dict[f'd{num_dec_layer}.loss_cls'] = loss_cls_i
+                loss_dict[f'd{num_dec_layer}.loss_mask'] = loss_mask_i
+                loss_dict[f'd{num_dec_layer}.loss_dice'] = loss_dice_i
+
+                loss_dict[f'd{num_dec_layer}.loss_denoising_cls'] = loss_denoising_cls_i
+                loss_dict[f'd{num_dec_layer}.loss_denoising_mask'] = loss_denoising_mask_i
+                loss_dict[f'd{num_dec_layer}.loss_denoising_dice'] = loss_denoising_dice_i
+                num_dec_layer += 1
+        else:
+            # loss from other decoder layers
+            num_dec_layer = 0
+            for loss_cls_i, loss_mask_i, loss_dice_i in zip(
+                    losses_cls[:-1], losses_mask[:-1], losses_dice[:-1]):
+                loss_dict[f'd{num_dec_layer}.loss_cls'] = loss_cls_i
+                loss_dict[f'd{num_dec_layer}.loss_mask'] = loss_mask_i
+                loss_dict[f'd{num_dec_layer}.loss_dice'] = loss_dice_i
+                num_dec_layer += 1
         return loss_dict
 
     def loss_single(self, cls_scores, mask_preds, gt_labels_list,

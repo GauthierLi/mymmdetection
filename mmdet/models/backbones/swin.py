@@ -12,6 +12,7 @@ from mmcv.cnn.bricks.transformer import FFN, build_dropout
 from mmcv.cnn.utils.weight_init import trunc_normal_
 from mmcv.runner import BaseModule, ModuleList, _load_checkpoint
 from mmcv.utils import to_2tuple
+from mmdet.models.plugins import spatialBias
 
 from ...utils import get_root_logger
 from ..builder import BACKBONES
@@ -545,6 +546,7 @@ class SwinTransformer(BaseModule):
                  pretrained=None,
                  convert_weights=False,
                  frozen_stages=-1,
+                 spatial_bias=False,
                  init_cfg=None):
         self.convert_weights = convert_weights
         self.frozen_stages = frozen_stages
@@ -638,6 +640,14 @@ class SwinTransformer(BaseModule):
             layer = build_norm_layer(norm_cfg, self.num_features[i])[1]
             layer_name = f'norm{i}'
             self.add_module(layer_name, layer)
+        
+        self.spatial_bias = spatial_bias
+        if self.spatial_bias:
+            self.sb_module_dict = dict()
+            for ele in self.out_indices:
+                channel = embed_dims * 2**(ele)
+                self.sb_module_dict[str(ele)] = spatialBias(in_channels=channel)
+            self.sb_module_dict = nn.ModuleDict(self.sb_module_dict)
 
     def train(self, mode=True):
         """Convert the model into training mode while keep layers freezed."""
@@ -767,6 +777,8 @@ class SwinTransformer(BaseModule):
                 out = out.view(-1, *out_hw_shape,
                                self.num_features[i]).permute(0, 3, 1,
                                                              2).contiguous()
+                if self.spatial_bias:
+                    out = self.sb_module_dict[str(i)](out)
                 outs.append(out)
 
         return outs
