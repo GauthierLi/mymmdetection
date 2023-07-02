@@ -6,6 +6,7 @@ import torch.utils.checkpoint as cp
 from mmcv.cnn import build_conv_layer, build_norm_layer, build_plugin_layer
 from mmcv.runner import BaseModule
 from torch.nn.modules.batchnorm import _BatchNorm
+from mmdet.models.plugins import SelfAttention
 
 from ..builder import BACKBONES
 from ..utils import ResLayer
@@ -239,10 +240,13 @@ class Bottleneck(BaseModule):
             plugin_names.append(name)
         return plugin_names
 
-    def forward_plugin(self, x, plugin_names):
+    def forward_plugin(self, x, plugin_names, extra_module=None):
         out = x
         for name in plugin_names:
-            out = getattr(self, name)(out)
+            if name == 'spatial_bias':
+                out = getattr(self, name)(out, extra_module)
+            else:
+                out = getattr(self, name)(out)
         return out
 
     @property
@@ -260,7 +264,7 @@ class Bottleneck(BaseModule):
         """nn.Module: normalization layer after the third convolution layer"""
         return getattr(self, self.norm3_name)
 
-    def forward(self, x):
+    def forward(self, x, extra_module=None):
         """Forward function."""
 
         def _inner_forward(x):
@@ -270,20 +274,20 @@ class Bottleneck(BaseModule):
             out = self.relu(out)
 
             if self.with_plugins:
-                out = self.forward_plugin(out, self.after_conv1_plugin_names)
+                out = self.forward_plugin(out, self.after_conv1_plugin_names, extra_module)
 
             out = self.conv2(out)
             out = self.norm2(out)
             out = self.relu(out)
 
             if self.with_plugins:
-                out = self.forward_plugin(out, self.after_conv2_plugin_names)
+                out = self.forward_plugin(out, self.after_conv2_plugin_names, extra_module)
 
             out = self.conv3(out)
             out = self.norm3(out)
 
             if self.with_plugins:
-                out = self.forward_plugin(out, self.after_conv3_plugin_names)
+                out = self.forward_plugin(out, self.after_conv3_plugin_names, extra_module)
 
             if self.downsample is not None:
                 identity = self.downsample(x)
@@ -491,6 +495,12 @@ class ResNet(BaseModule):
         self.feat_dim = self.block.expansion * base_channels * 2**(
             len(self.stage_blocks) - 1)
 
+        if plugins and plugins[0]['cfg']['type'] == 'spatialBias':
+            self.sb_on=True
+            self.SB_linear = SelfAttention(plugins[0]['cfg']['hidden_dim'], 8)
+        else:
+            self.sb_on = False
+
     def make_stage_plugins(self, plugins, stage_idx):
         """Make plugins for ResNet ``stage_idx`` th stage.
 
@@ -640,7 +650,10 @@ class ResNet(BaseModule):
         outs = []
         for i, layer_name in enumerate(self.res_layers):
             res_layer = getattr(self, layer_name)
-            x = res_layer(x)
+            if self.sb_on:
+                x = res_layer(x, self.SB_linear)
+            else:
+                x = res_layer(x)
             if i in self.out_indices:
                 outs.append(x)
         return tuple(outs)

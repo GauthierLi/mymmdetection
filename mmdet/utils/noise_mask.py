@@ -19,7 +19,11 @@ def shape_noise_generate(shape, stages, rate):
         rate = torch.tensor([rate])
         rate = rate.repeat(shape)
     noise = torch.rand(shape)
+
+    # step by step
     thr_list = [rate * (i+1) / float(stages) for i in range(stages)]
+    # thr_list = [rate for i in range(stages)]
+
     noise_list = []
     for thr in thr_list:
         tmp_noise = (noise>thr).float()

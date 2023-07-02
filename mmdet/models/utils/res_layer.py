@@ -102,6 +102,18 @@ class ResLayer(Sequential):
                     norm_cfg=norm_cfg,
                     **kwargs))
         super(ResLayer, self).__init__(*layers)
+    
+    def forward(self, input, extra_input=None):
+        import mmdet.models.backbones.resnet as res
+        for module in self:
+            if isinstance(module, res.Bottleneck):
+                input = module(input, extra_input)
+            else:
+                input = module(input)
+        # for name, module in self.named_modules():
+        #     import pdb; pdb.set_trace()
+        #     input = module(input)
+        return input
 
 
 class SimplifiedBasicBlock(BaseModule):
